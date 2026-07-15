@@ -1,0 +1,21 @@
+# data: DuckDB + caches are reproducible via `heat-island add-city`
+data/
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.coverage
+
+# editors / os
+.DS_Store
+.idea/
+.vscode/
+
+# scratch
+*.log

@@ -1,0 +1,4 @@
+# Dashdown build artifacts
+.dist/
+.pdf/
+.shots/

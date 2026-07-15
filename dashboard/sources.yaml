@@ -1,0 +1,3 @@
+sales_data:
+  type: csv
+  directory: data

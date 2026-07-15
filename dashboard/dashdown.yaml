@@ -1,0 +1,11 @@
+title: My Analytics
+agents: [claude]   # coding-agent guides to keep in sync via `dashdown skill`
+# branding:
+#   logo: assets/logo.svg   # shown in the header; path or https URL
+#   palette: ["#6366f1", "#22c55e", "#f59e0b"]   # chart series colors
+#
+# Anonymous usage telemetry (Dashdown version + OS only — no project data) is
+# on by default. Opt out here, or with `dashdown telemetry off` /
+# DASHDOWN_TELEMETRY=0 / DO_NOT_TRACK=1.
+# telemetry:
+#   enabled: false
