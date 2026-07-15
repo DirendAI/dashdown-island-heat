@@ -108,9 +108,8 @@ def _fetch_tracts(
         page = fetch_json(query_url, params)
         feats = page.get("features") or []
         features.extend(feats)
-        exceeded = bool(
-            page.get("exceededTransferLimit") or page.get("properties", {}).get("exceededTransferLimit")
-        )
+        props = page.get("properties") or {}
+        exceeded = bool(page.get("exceededTransferLimit") or props.get("exceededTransferLimit"))
         if not exceeded or not feats:
             break
         offset += len(feats)
