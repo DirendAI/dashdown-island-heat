@@ -1,3 +1,7 @@
-sales_data:
-  type: csv
-  directory: data
+# Single DuckDB source — the heat-island pipeline output.
+# Path is resolved relative to this project directory (see .references/connectors.md),
+# so it keeps working when the repo is cloned elsewhere — no absolute path.
+# As the only source, it is automatically the project default (no `connector=` needed).
+heat:
+  type: duckdb
+  path: ../data/heat.duckdb
