@@ -56,8 +56,7 @@ Mean absolute **SHAP** value per feature — how much each input moves the
 predicted temperature, on average. Built-up density (**NDBI**) and building
 density dominate; vegetation and water proximity pull the other way.
 
-<BarChart data={feat_imp} x="feature" y="mean_abs_shap" horizontal
-  sort_by="mean_abs_shap" height=380
+<BarChart data={feat_imp} x="feature" y="mean_abs_shap" horizontal height=380
   title="Feature importance (mean |SHAP|, °C)" />
 
 ## Predicted vs observed
