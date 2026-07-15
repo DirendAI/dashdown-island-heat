@@ -23,6 +23,7 @@ FROM hexes h
 WHERE h.city_id = COALESCE(
   (SELECT MIN(city_id) FROM cities WHERE name = '${city}'),
   (SELECT MIN(city_id) FROM cities))
+-- Final ORDER BY = legend color order (lowest→highest onto blue→red). Keep it.
 ORDER BY priority_score
 ```
 

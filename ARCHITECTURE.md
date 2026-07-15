@@ -185,11 +185,11 @@ def fetch_elevation_per_hex(boundary, cfg) -> pd.DataFrame  # h3, elevation
 **Sentinel-2** (`fetch_s2_indices_per_hex`):
 - Bands `B02 B03 B04 B08 B11 SCL` at `cfg.s2_res_deg` (~20 m; B11 native 20 m).
 - Mask: SCL in {0,1,3,8,9,10} → NaN (nodata, saturated, shadow, cloud med/high, cirrus).
-- **Processing-baseline offset**: for each item, if
-  `float(item.properties.get("s2:processing_baseline", "0")) >= 4.0` (or missing and
-  datetime ≥ 2022-01-25) then reflectance = (DN − 1000)/10000 else DN/10000. Implement by
-  building a per-time offset DataArray (dims=("time",)) and broadcasting — do not loop pixels.
-  Clip reflectance to [0, 1].
+- **Processing-baseline offset**: reflectance = (DN − 1000)/10000 for acquisitions on/after
+  2022-01-25 (the baseline-04.00 rollout date), else DN/10000. The rule is keyed on the
+  loaded time axis (a per-time offset DataArray, dims=("time",), broadcast — no pixel loops)
+  rather than per-item `s2:processing_baseline`, because `groupby="solar_day"` composites
+  items so per-item properties no longer map 1:1 onto time slices. Clip reflectance to [0, 1].
 - Median-composite each band over time **first**, then compute indices from the composite:
   `ndvi=(B08−B04)/(B08+B04)`, `ndbi=(B11−B08)/(B11+B08)`, `ndwi=(B03−B08)/(B03+B08)`,
   `albedo = (B02+B03+B04)/3` (documented crude visible-band proxy). Guard zero denominators → NaN.
@@ -234,8 +234,9 @@ def fetch_osm_features_per_hex(boundary, hex_gdf, cfg) -> pd.DataFrame
 ## demographics.py (US only, optional, must NEVER crash the pipeline)
 
 ```python
-def fetch_demographics_per_hex(boundary, hex_gdf, cfg) -> pd.DataFrame
+def fetch_demographics_per_hex(boundary, hex_gdf, cfg, *, fetch_json=_fetch_json) -> pd.DataFrame
     # h3, median_income, pct_over_65, pct_under_5  (may be empty df with those columns)
+    # fetch_json is the injectable HTTP layer (tests pass a fake; default wraps requests+retry)
 ```
 - Gate: `country` contains "United States" (Nominatim display_name for US cities ends with
   "United States"). Else return empty frame (columns present, zero rows).
@@ -288,8 +289,9 @@ class ModelResult:
 def train_and_evaluate(df: pd.DataFrame, cfg: PipelineConfig) -> ModelResult
 ```
 - X = df[FEATURES], y = df["mean_lst_c"].
-- **Spatial CV**: groups = `hex_parents(df.h3, cfg.cv_parent_offset)` (res-9 → res-7 blocks
-  ≈ 5 km). `GroupKFold(n_splits=min(cfg.cv_folds, n_unique_groups))`; if <2 groups, plain
+- **Spatial CV**: groups = the H3 parent of each hex at `res - cfg.cv_parent_offset`
+  (res-9 → res-7 blocks ≈ 5 km). model.py computes this locally (`_spatial_groups`,
+  equivalent to `hexgrid.hex_parents`) so it stays import-independent of hexgrid. `GroupKFold(n_splits=min(cfg.cv_folds, n_unique_groups))`; if <2 groups, plain
   `KFold(2)` + WARNING. Collect out-of-fold predictions → single global R² and MAE.
 - Params (fixed): `n_estimators=400, learning_rate=0.05, num_leaves=31, min_child_samples=20,
   subsample=0.8, colsample_bytree=0.8, random_state=cfg.seed, n_jobs=-1, verbosity=-1`.
@@ -304,6 +306,7 @@ def train_and_evaluate(df: pd.DataFrame, cfg: PipelineConfig) -> ModelResult
 def greening_target_ndvi(df, cfg) -> float
     # 75th percentile of ndvi among is_park hexes if ≥ 20 park hexes,
     # else 90th percentile of all ndvi (fallback, log it).
+    # An absent is_park column counts as zero park hexes (fallback path, no crash).
 
 def run_greening(df, model, cfg) -> pd.DataFrame   # adds predicted_lst_c, predicted_cooling_c
 ```
@@ -344,7 +347,10 @@ CREATE TABLE IF NOT EXISTS feature_importance(
 
 ```python
 def connect(db_path) -> duckdb.DuckDBPyConnection   # mkdir parents, create tables
-def upsert_city(db_path, boundary, hex_df, metrics: ModelResult) -> None
+def upsert_city(db_path, boundary, hex_df, metrics) -> None
+    # boundary/metrics are duck-typed (BoundaryLike/MetricsLike Protocols): any objects with
+    # city_id/name/country/centroid_* and r2/mae/n_train/shap_importance attributes — db.py
+    # deliberately imports neither boundary.py nor model.py.
     # single transaction: DELETE all four tables WHERE city_id = ?, then INSERT.
     # geometry_wkt from hex geometry .wkt. n_hexes = len(hex_df). processed_at/trained_at = now UTC.
 def list_cities(db_path) -> pd.DataFrame            # cities joined with metrics

@@ -33,8 +33,9 @@ Everything runs on **free, keyless data**:
    parent cells) so spatial autocorrelation can't leak between folds. SHAP values explain
    what drives the heat.
 6. **Greening counterfactual** — every hexagon's NDVI is raised to the 75th percentile of the
-   city's park hexagons (never lowered) and the model re-predicts LST. The drop, floored at
-   zero, is `predicted_cooling_c`: *the modeled payoff of greening that block*.
+   city's park hexagons (never lowered; cities with < 20 park hexes fall back to the 90th
+   percentile of all NDVI) and the model re-predicts LST. The drop, floored at zero, is
+   `predicted_cooling_c`: *the modeled payoff of greening that block*.
 7. **Priority score** — `heat percentile × normalized cooling × vulnerability` (vulnerability
    uses income/age demographics for US cities, defaults to 1 elsewhere), normalized to [0, 1].
 8. Everything lands in one DuckDB file (`data/heat.duckdb`) that the Dashdown dashboard reads.
@@ -73,16 +74,37 @@ processed city is instantly explorable, and adding a brand-new one is a single
 `heat-island add-city` away:
 
 - **Overview** — headline counters (hottest hex, city mean LST, mean NDVI, high-priority hex
-  count) and a method explainer.
+  count, hexes analysed, model R²) and a method explainer.
 - **Heat map** — hexagons colored by surface temperature, a vegetation view, and the
   LST-vs-NDVI relationship.
-- **ML insights** — SHAP feature importance, spatial-CV R²/MAE, predicted-vs-actual scatter.
+- **ML insights** — SHAP feature importance, spatial-CV R²/MAE/n_train counters,
+  predicted-vs-actual scatter.
 - **Planting priorities** — the greening priority map and a top-25 table of where trees pay
   off most.
 
+## Example results
+
+Two cities processed with the identical, unmodified pipeline:
+
+| City | Hexes | Summer LST (min/mean/max °C) | Spatial-CV R² | MAE °C | Max predicted cooling |
+| ---- | ----- | ---------------------------- | ------------- | ------ | --------------------- |
+| Ghent, Belgium | 1753 | 23.2 / 35.5 / 51.7 | 0.863 | 1.04 | 5.6 °C |
+| Ljubljana, Slovenia | 2559 | 25.5 / 31.6 / 46.7 | 0.952 | 0.69 | 4.2 °C |
+
+The Landsat composite resolves the classic heat-island anatomy — hot dense core and
+industrial port corridor, cool canals and green periphery:
+
+<p align="center">
+  <img src="docs/img/heatmap_ghent-belgium.png" alt="Ghent land-surface temperature per hex" width="46%" />
+  <img src="docs/img/heatmap_ljubljana-slovenia.png" alt="Ljubljana land-surface temperature per hex" width="42%" />
+</p>
+
 ## Screenshots
 
-_Generated at build time — see `docs/screenshots/`._
+| | |
+| --- | --- |
+| ![Overview](docs/screenshots/overview.png) | ![Heat map](docs/screenshots/heat-map.png) |
+| ![ML insights](docs/screenshots/ml-insights.png) | ![Planting priorities](docs/screenshots/priorities.png) |
 
 ## DuckDB schema (the pipeline ↔ dashboard contract)
 

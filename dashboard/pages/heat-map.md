@@ -23,6 +23,8 @@ FROM hexes h
 WHERE h.city_id = COALESCE(
   (SELECT MIN(city_id) FROM cities WHERE name = '${city}'),
   (SELECT MIN(city_id) FROM cities))
+-- The final ORDER BY drives the series first-seen order = legend color order
+-- (coolest→hottest maps onto the blue→red ramp). Do not remove it.
 ORDER BY mean_lst_c
 ```
 
@@ -40,6 +42,7 @@ FROM hexes h
 WHERE h.city_id = COALESCE(
   (SELECT MIN(city_id) FROM cities WHERE name = '${city}'),
   (SELECT MIN(city_id) FROM cities))
+-- Final ORDER BY = legend color order (sparsest→greenest onto brown→green). Keep it.
 ORDER BY ndvi
 ```
 
