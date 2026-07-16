@@ -1,0 +1,1 @@
+{"columns": ["name", "country", "n_hexes", "r2", "mae", "n_train"], "rows": [["Ghent", "Belgium", 1753, 0.8649072714864466, 1.040525388103983, 1753]], "query": "meta"}
