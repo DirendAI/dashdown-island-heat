@@ -91,8 +91,14 @@ git add site && git commit -m "rebuild site" && git push
 ```
 
 `.github/workflows/pages.yml` deploys the committed `site/` to GitHub Pages on every
-push to `main` that touches it (first run enables Pages automatically). The site is
-served at `https://<owner>.github.io/<repo>/` — the export is subpath-safe.
+push to `main` that touches it. The site is served at `https://<owner>.github.io/<repo>/`
+— the export is subpath-safe.
+
+> **One-time setup:** the workflow tries to enable Pages itself, but org policies often
+> block the workflow token from creating the Pages site (`Resource not accessible by
+> integration`). In that case a repo admin enables it once under
+> **Settings → Pages → Build and deployment → Source: GitHub Actions**, then re-runs the
+> failed workflow.
 
 ## Dashboard
 

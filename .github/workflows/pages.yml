@@ -4,6 +4,13 @@
 # build pre-renders query snapshots from data/heat.duckdb, which is gitignored
 # (reproducible via `heat-island add-city`). CI therefore only uploads the
 # committed artifact; it never needs the pipeline or the database.
+#
+# ONE-TIME SETUP: configure-pages tries to enable Pages automatically
+# (enablement: true), but many org policies block the workflow token from
+# creating the Pages site ("Resource not accessible by integration"). If the
+# first run fails that way, a repo admin must enable it once in
+# Settings → Pages → Build and deployment → Source: "GitHub Actions",
+# then re-run this workflow (or push any site/ change).
 
 name: Deploy dashboard to GitHub Pages
 
