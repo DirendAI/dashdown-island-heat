@@ -153,3 +153,140 @@ def test_sort_and_cap_items_missing_cloud_treated_as_100():
     out = _sort_and_cap_items([_FakeItem(None), _FakeItem(90)], max_items=5)
     assert out[0].properties.get("eo:cloud_cover") == 90  # 90 sorts before missing (100)
     assert out[1].properties.get("eo:cloud_cover") is None
+
+
+# --- land cover (fetch_landcover_per_hex) pure logic -------------------------
+#
+# ESA WorldCover reclassification, tree indicator, version selection and the class->fraction->hex
+# aggregation round trip. All offline (synthetic arrays / fake STAC items), no network.
+
+import datetime as _dt  # noqa: E402
+
+import h3  # noqa: E402
+import pandas as pd  # noqa: E402
+
+from heat_island.config import LANDCOVER_TREE_CLASS, PLANTABLE_CLASS_WEIGHTS  # noqa: E402
+from heat_island.hexgrid import points_to_hex_means  # noqa: E402
+from heat_island.satellite import (  # noqa: E402
+    _latest_version_items,
+    _parse_major_version,
+    _plantable_weights_lookup,
+    _tree_indicator,
+)
+
+
+# --- _plantable_weights_lookup -----------------------------------------------
+
+
+def test_plantable_weights_lookup_known_unknown_and_nodata():
+    # every catalogued class + an unknown class (15) + nodata (0)
+    classes = np.array([10, 20, 30, 40, 50, 60, 70, 80, 90, 95, 100, 15, 0], dtype="uint8")
+    out = np.asarray(_plantable_weights_lookup(classes))
+
+    for i, code in enumerate(classes.tolist()):
+        if code == 0:
+            assert np.isnan(out[i])  # nodata -> NaN
+        elif code == 15:
+            assert out[i] == pytest.approx(0.0)  # unknown class -> 0.0
+        else:
+            assert out[i] == pytest.approx(PLANTABLE_CLASS_WEIGHTS[code])
+    # the anchors the architect called out explicitly
+    assert out[4] == pytest.approx(0.15)  # 50 built-up -> tree-pit/depave credit
+    assert out[0] == pytest.approx(0.0)   # 10 tree cover -> no ADDITIONAL room
+    assert out[1] == pytest.approx(1.0)   # 20 shrubland -> fully plantable
+
+
+def test_plantable_weights_lookup_preserves_xarray_coords():
+    coords = {"latitude": [51.0, 51.1], "longitude": [3.7, 3.8]}
+    classes = xr.DataArray(
+        np.array([[10, 30], [50, 0]], dtype="uint8"), dims=("latitude", "longitude"), coords=coords
+    )
+
+    out = _plantable_weights_lookup(classes)
+
+    assert isinstance(out, xr.DataArray)
+    assert out.dims == ("latitude", "longitude")
+    assert float(out.sel(latitude=51.0, longitude=3.7)) == pytest.approx(0.0)   # tree cover
+    assert float(out.sel(latitude=51.0, longitude=3.8)) == pytest.approx(1.0)   # grassland
+    assert float(out.sel(latitude=51.1, longitude=3.7)) == pytest.approx(0.15)  # built-up
+    assert np.isnan(float(out.sel(latitude=51.1, longitude=3.8)))               # nodata
+
+
+# --- _tree_indicator ---------------------------------------------------------
+
+
+def test_tree_indicator_only_class_10_and_nodata():
+    classes = np.array([LANDCOVER_TREE_CLASS, 20, 50, 80, 0], dtype="uint8")
+    out = np.asarray(_tree_indicator(classes))
+    assert out[0] == pytest.approx(1.0)  # tree cover -> 1
+    assert out[1] == pytest.approx(0.0)  # shrubland -> 0
+    assert out[2] == pytest.approx(0.0)  # built-up -> 0
+    assert out[3] == pytest.approx(0.0)  # water -> 0
+    assert np.isnan(out[4])              # nodata -> NaN
+
+
+# --- class -> fraction -> points_to_hex_means round trip ---------------------
+
+
+def test_landcover_fractions_aggregate_per_hex_with_nodata_skipped():
+    res = 9
+    # two well-separated res-9 cells; place pixels at each cell centre so membership is exact
+    cell_a = h3.latlng_to_cell(51.05, 3.72, res)
+    cell_b = h3.latlng_to_cell(51.20, 3.90, res)
+    lat_a, lon_a = h3.cell_to_latlng(cell_a)
+    lat_b, lon_b = h3.cell_to_latlng(cell_b)
+
+    classes = np.array([30, 10, 50, 0], dtype="uint8")  # A: grass+tree ; B: built + nodata
+    df = pd.DataFrame({"lat": [lat_a, lat_a, lat_b, lat_b], "lon": [lon_a, lon_a, lon_b, lon_b]})
+    df["plantable_fraction"] = np.asarray(_plantable_weights_lookup(classes))
+    df["tree_fraction"] = np.asarray(_tree_indicator(classes))
+
+    out = points_to_hex_means(df, res, ["plantable_fraction", "tree_fraction"]).set_index("h3")
+
+    # hex A: grassland(plantable 1.0, tree 0) + tree cover(plantable 0.0, tree 1) -> means 0.5/0.5
+    assert out.loc[cell_a, "plantable_fraction"] == pytest.approx(0.5)
+    assert out.loc[cell_a, "tree_fraction"] == pytest.approx(0.5)
+    # hex B: built-up(0.15) + nodata(NaN, skipped by the skipna mean) -> plantable 0.15, tree 0.0
+    assert out.loc[cell_b, "plantable_fraction"] == pytest.approx(0.15)
+    assert out.loc[cell_b, "tree_fraction"] == pytest.approx(0.0)
+    # both fractions land in [0, 1]
+    assert out[["plantable_fraction", "tree_fraction"]].to_numpy().min() >= 0.0
+    assert out[["plantable_fraction", "tree_fraction"]].to_numpy().max() <= 1.0
+
+
+# --- version selection -------------------------------------------------------
+
+
+def test_parse_major_version():
+    assert _parse_major_version("2.0.0") == 2
+    assert _parse_major_version("1.0.0") == 1
+    assert _parse_major_version("10.2.3") == 10  # int parse, not lexical ("10" < "9" lexically)
+    assert _parse_major_version(None) is None
+    assert _parse_major_version("garbage") is None
+
+
+class _FakeVersionItem:
+    """Stand-in STAC item exposing ``.properties`` and ``.datetime`` for version selection."""
+
+    def __init__(self, version=None, dt=None, start=None):
+        props = {}
+        if version is not None:
+            props["esa_worldcover:product_version"] = version
+        if start is not None:
+            props["start_datetime"] = start
+        self.properties = props
+        self.datetime = dt
+        self.id = f"item-v{version}"
+
+
+def test_latest_version_items_keeps_newest_major():
+    items = [_FakeVersionItem("1.0.0"), _FakeVersionItem("2.0.0"), _FakeVersionItem("1.0.0")]
+    out = _latest_version_items(items)
+    assert [it.properties["esa_worldcover:product_version"] for it in out] == ["2.0.0"]
+
+
+def test_latest_version_items_datetime_fallback_when_property_absent():
+    # no version property anywhere -> fall back to the latest item time (WorldCover uses ranges)
+    old = _FakeVersionItem(dt=_dt.datetime(2020, 1, 1))
+    new = _FakeVersionItem(dt=_dt.datetime(2021, 1, 1))
+    assert _latest_version_items([old, new]) == [new]

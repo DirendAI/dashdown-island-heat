@@ -1,17 +1,21 @@
-"""Satellite fetchers: Landsat land-surface temperature, Sentinel-2 indices, Copernicus DEM.
+"""Satellite fetchers: Landsat land-surface temperature, Sentinel-2 indices, Copernicus DEM,
+ESA WorldCover land cover.
 
-All three read from Microsoft Planetary Computer (keyless, `planetary_computer.sign_inplace`),
-composite over the recent summer windows, aggregate to the city's H3 grid, and cache the result
-as parquet under ``cache/<city_id>/``. A cache hit skips the network entirely.
+They all read from Microsoft Planetary Computer (keyless, `planetary_computer.sign_inplace`),
+aggregate to the city's H3 grid, and cache the result as parquet under ``cache/<city_id>/`` (the
+temperature/index fetchers composite the recent summer windows; the DEM and land-cover products
+are static). A cache hit skips the network entirely.
 
 Public API (consumed by features.py):
 
     fetch_lst_per_hex(boundary, cfg)        -> DataFrame[h3, mean_lst_c]
     fetch_s2_indices_per_hex(boundary, cfg) -> DataFrame[h3, ndvi, ndbi, ndwi, albedo]
     fetch_elevation_per_hex(boundary, cfg)  -> DataFrame[h3, elevation]
+    fetch_landcover_per_hex(boundary, cfg)  -> DataFrame[h3, plantable_fraction, tree_fraction]
 
 Pure, unit-testable helpers (no network): ``_lst_from_dn``, ``_s2_offset_for_times``,
-``_indices_from_bands``, ``_sort_and_cap_items``.
+``_indices_from_bands``, ``_sort_and_cap_items``, ``_plantable_weights_lookup``,
+``_tree_indicator``, ``_parse_major_version``, ``_latest_version_items``.
 
 Dask note: we rely on dask's default threaded scheduler (no distributed cluster). Chunks are
 2048 px so each city's spatial extent is a single chunk and task graphs stay tiny; the only
@@ -61,6 +65,15 @@ _S2_OFFSET_NEW = -1000.0
 # 9 cloud high prob, 10 thin cirrus.
 _SCL_DROP = [0, 1, 3, 8, 9, 10]
 _S2_NDVI_GATE = (-0.1, 0.9)
+
+# ESA WorldCover land cover: a static, global, categorical 10 m map (uint8 class codes 10..100,
+# nodata 0 per the asset's raster:bands metadata). Items carry no single ``datetime`` (they use a
+# year-long start/end range), so we select the newest product by ``esa_worldcover:product_version``
+# ("2.0.0" = 2021 map, "1.0.0" = 2020) rather than by time. Probed live on Planetary Computer.
+_LC_COLLECTION = "esa-worldcover"
+_LC_MAP_ASSET_KEYS = ("map",)  # categorical "Land Cover Classes" asset
+_LC_VERSION_PROP = "esa_worldcover:product_version"
+_LC_NODATA = 0
 
 _DENOM_EPS = 1e-6  # guard band for normalized-difference denominators
 
@@ -137,6 +150,28 @@ def _indices_from_bands(
     return ndvi, ndbi, ndwi, albedo
 
 
+def _plantable_weights_lookup(classes: Any) -> Any:
+    """ESA WorldCover class codes -> per-pixel plantable weight in [0, 1] (vectorized).
+
+    Weights come from ``config.PLANTABLE_CLASS_WEIGHTS``; a class absent from that table maps to
+    0.0 and nodata (class ``_LC_NODATA`` == 0) maps to NaN. Built as a sum of mutually exclusive
+    masked class indicators so it stays lazy on a dask/xarray stack (preserving lat/lon/time
+    coords for the median-composite downstream) yet also works on a plain numpy array offline.
+    """
+    weights = sum(float(w) * (classes == cls) for cls, w in config.PLANTABLE_CLASS_WEIGHTS.items())
+    return xr.where(classes == _LC_NODATA, np.nan, weights)
+
+
+def _tree_indicator(classes: Any) -> Any:
+    """ESA WorldCover tree-cover indicator: 1.0 where class == ``LANDCOVER_TREE_CLASS`` else 0.0.
+
+    Nodata (class ``_LC_NODATA``) maps to NaN. Same lazy/numpy duality (and coord preservation on
+    an xarray input) as ``_plantable_weights_lookup``.
+    """
+    tree = (classes == config.LANDCOVER_TREE_CLASS).astype("float64")
+    return xr.where(classes == _LC_NODATA, np.nan, tree)
+
+
 def _sort_and_cap_items(items: Sequence[Any], max_items: int) -> list[Any]:
     """Sort STAC items by ``eo:cloud_cover`` ascending (missing -> 100) and cap at ``max_items``."""
 
@@ -145,6 +180,51 @@ def _sort_and_cap_items(items: Sequence[Any], max_items: int) -> list[Any]:
         return float(val) if val is not None else 100.0
 
     return sorted(items, key=cloud)[:max_items]
+
+
+def _parse_major_version(version: Any) -> int | None:
+    """Major integer of a dotted version string (``"2.0.0" -> 2``); None if absent/unparseable.
+
+    Comparing the parsed major int avoids the pitfalls of string-comparing versions (``"10" <
+    "9"`` lexically), which is all WorldCover needs to rank ``"2.0.0"`` above ``"1.0.0"``.
+    """
+    if version is None:
+        return None
+    try:
+        return int(str(version).split(".")[0])
+    except (ValueError, IndexError):
+        return None
+
+
+def _item_time(item: Any) -> str:
+    """Sortable acquisition time used only as a version tie-breaker: the item ``datetime`` if set,
+    else its ``start_datetime`` (WorldCover items carry no single ``datetime``), else ``""``."""
+    dt = getattr(item, "datetime", None)
+    if dt is not None:
+        return dt.isoformat()
+    return str(item.properties.get("start_datetime", ""))
+
+
+def _latest_version_items(items: Sequence[Any]) -> list[Any]:
+    """Keep only the ESA WorldCover items of the newest product version.
+
+    Items are ranked by the parsed major of ``esa_worldcover:product_version``; if no item carries
+    that property we fall back to keeping the items of the latest ``_item_time``.
+    """
+    majors = [_parse_major_version(it.properties.get(_LC_VERSION_PROP)) for it in items]
+    if any(m is not None for m in majors):
+        top = max(m for m in majors if m is not None)
+        kept = [it for it, m in zip(items, majors) if m == top]
+        log.info("land cover: %d/%d item(s) at product version major %d", len(kept), len(items), top)
+        return kept
+
+    latest = max((_item_time(it) for it in items), default="")
+    kept = [it for it in items if _item_time(it) == latest]
+    log.info(
+        "land cover: no version property — kept %d/%d item(s) at latest time %s",
+        len(kept), len(items), latest or "?",
+    )
+    return kept
 
 
 # --- search / geometry / IO internals ----------------------------------------
@@ -271,6 +351,20 @@ def _read_cache(path, what: str) -> pd.DataFrame | None:
 def _write_cache(df: pd.DataFrame, path) -> None:
     df.to_parquet(path, index=False)
     log.info("wrote %s (%d hexes)", path, len(df))
+
+
+def _check_unit_interval(df: pd.DataFrame, cols: Sequence[str], name: str) -> None:
+    """WARN if any aggregated fraction escapes [0, 1]. The class weights are bounded to [0, 1] and
+    hex means of bounded values stay bounded, so this never fires in practice — it guards against a
+    reclassification/compositing regression rather than silently clipping."""
+    for col in cols:
+        vals = df[col].to_numpy()
+        finite = vals[np.isfinite(vals)]
+        if finite.size and (finite.min() < 0.0 or finite.max() > 1.0):
+            log.warning(
+                "land cover %s: %s outside [0, 1] (min %.3f, max %.3f) — check reclassification",
+                name, col, float(finite.min()), float(finite.max()),
+            )
 
 
 # --- public fetchers ---------------------------------------------------------
@@ -484,5 +578,81 @@ def fetch_elevation_per_hex(boundary: CityBoundary, cfg: PipelineConfig) -> pd.D
 
     points = _grid_to_points(elevation, "elevation")
     hexdf = points_to_hex_means(points, cfg.h3_resolution, ["elevation"])
+    _write_cache(hexdf, cache)
+    return hexdf
+
+
+def fetch_landcover_per_hex(boundary: CityBoundary, cfg: PipelineConfig) -> pd.DataFrame:
+    """Plantable and tree-cover fractions per H3 hex from ESA WorldCover. Columns: h3,
+    plantable_fraction, tree_fraction (both in [0, 1]).
+
+    The static 10 m categorical map is reclassified per pixel to a plantable weight
+    (``config.PLANTABLE_CLASS_WEIGHTS``) and a tree indicator **before** any compositing — never
+    median raw class codes — then median-composited over tiles and averaged per hex.
+    """
+    cache = _cache_path(cfg, boundary.city_id, "landcover")
+    cached = _read_cache(cache, "land cover")
+    if cached is not None:
+        return cached
+
+    import odc.stac
+
+    catalog = _open_catalog()
+    bbox = _bbox(boundary, cfg)
+
+    # Static product: search without datetime / cloud filter, then keep the newest version only.
+    search = catalog.search(collections=[_LC_COLLECTION], bbox=list(bbox))
+    items = retry_call(lambda: list(search.item_collection()), what="esa-worldcover search")
+    if not items:
+        raise DataUnavailableError(
+            f"{_LC_COLLECTION} returned no tiles for '{boundary.name}' "
+            f"(bbox {tuple(round(b, 3) for b in bbox)})."
+        )
+    items = _latest_version_items(items)
+
+    assets = items[0].assets
+    map_key = next((k for k in _LC_MAP_ASSET_KEYS if k in assets), None)
+    if map_key is None:
+        raise DataUnavailableError(
+            f"{_LC_COLLECTION} item is missing the land-cover map asset "
+            f"(have: {sorted(assets)}). Expected one of {list(_LC_MAP_ASSET_KEYS)}."
+        )
+
+    ds = odc.stac.load(
+        items,
+        bands=[map_key],
+        groupby="solar_day",
+        crs="EPSG:4326",
+        resolution=cfg.landcover_res_deg,
+        bbox=list(bbox),
+        chunks=_CHUNKS,
+    )
+
+    # Reclassify categorical codes -> plantable weight + tree indicator per slice, THEN composite.
+    classes = ds[map_key]
+    plantable = _drop_time(_plantable_weights_lookup(classes))
+    tree = _drop_time(_tree_indicator(classes))
+    composite = xr.Dataset({"plantable_fraction": plantable, "tree_fraction": tree})
+    composite = retry_call(composite.compute, what="ESA WorldCover composite compute")
+
+    if not np.isfinite(composite["plantable_fraction"].values).any():
+        raise DataUnavailableError(
+            f"ESA WorldCover map for '{boundary.name}' is entirely nodata over the bbox."
+        )
+
+    value_cols = ["plantable_fraction", "tree_fraction"]
+    points = _dataset_to_points(composite, value_cols)
+    hexdf = points_to_hex_means(points, cfg.h3_resolution, value_cols)
+    _check_unit_interval(hexdf, value_cols, boundary.name)
+
+    version = items[0].properties.get(_LC_VERSION_PROP, "?")
+    p_mn, p_mean, p_mx = _stats(hexdf["plantable_fraction"].to_numpy())
+    log.info(
+        "land cover %s: %d tile(s) v%s -> %d hexes | plantable %.2f/%.2f/%.2f (min/mean/max) "
+        "| tree %.2f (mean)",
+        boundary.name, len(items), version, len(hexdf),
+        p_mn, p_mean, p_mx, float(np.nanmean(hexdf["tree_fraction"].to_numpy())),
+    )
+
     _write_cache(hexdf, cache)
     return hexdf
