@@ -14,6 +14,7 @@ SELECT
   MAX(mean_lst_c)                              AS hottest_hex,
   AVG(mean_lst_c)                              AS mean_lst,
   AVG(ndvi)                                    AS mean_ndvi,
+  AVG(plantable_fraction)                      AS mean_plantable,
   COUNT(*) FILTER (WHERE priority_score >= 0.8) AS high_priority,
   COUNT(*)                                     AS n_hexes
 FROM hexes h
@@ -38,10 +39,11 @@ filter bar; every page re-queries for it.
 
 ## Key metrics
 
-<Grid cols=3>
+<Grid cols=4>
 <Counter data={kpis} column="hottest_hex" format="number" decimals=1 suffix="°C" label="Hottest hex" />
 <Counter data={kpis} column="mean_lst" format="number" decimals=1 suffix="°C" label="City mean LST" />
 <Counter data={kpis} column="mean_ndvi" format="number" decimals=2 label="Mean NDVI (greenness)" />
+<Counter data={kpis} column="mean_plantable" format="number" decimals=2 label="Plantable share" />
 <Counter data={kpis} column="high_priority" format="number" decimals=0 label="High-priority hexes (≥ 0.8)" />
 <Counter data={kpis} column="n_hexes" format="number" decimals=0 label="Hexes analysed" />
 <Counter data={model_r2} column="r2" format="number" decimals=3 label="Model R² (spatial CV)" />
@@ -60,7 +62,10 @@ cross-validation** — the test hexes sit in spatial blocks held out from traini
 so the model can't peek at a neighbour's temperature (see
 [ML insights](/ml-insights)). A **greening counterfactual** then lifts each hex's
 NDVI to local park level and re-predicts LST; the drop is its modelled
-`predicted_cooling_c`. Finally the planting **priority score** combines
+`predicted_cooling_c`. That gap-closing is capped by each hex's **plantable
+space** — a land-cover-derived share, zero for water or solid forest and up to
+fully open ground, that keeps the cooling figure achievable rather than
+theoretical. Finally the planting **priority score** combines
 **heat × cooling potential × vulnerability** into a single 0–1 rank
 (see [Planting priorities](/priorities)).
 

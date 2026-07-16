@@ -14,13 +14,17 @@ dashdown serve .        # dev server at http://127.0.0.1:8000 (live reload)
 ## Pages
 
 - **Overview** (`/`) — headline KPIs (hottest hex, mean LST, mean NDVI,
-  high-priority hex count, hexes analysed, model R²) and how the method works.
+  plantable share, high-priority hex count, hexes analysed, model R²) and how
+  the method works, including the plantability-constrained cooling step.
 - **Heat map** (`/heat-map`) — hex-centroid scatter "maps" of LST and NDVI
   quintiles, plus the heat-vs-greenness relationship.
 - **ML insights** (`/ml-insights`) — model quality, SHAP feature importance,
-  predicted-vs-observed LST, and what spatial cross-validation buys you.
-- **Planting priorities** (`/priorities`) — priority-quintile map, the top 25
-  hexes to plant, and the biggest single-hex cooling win.
+  predicted-vs-observed LST, what spatial cross-validation buys you, and the
+  fold-model ensemble spread behind each cooling estimate's ± uncertainty.
+- **Planting priorities** (`/priorities`) — priority-quintile map, a
+  plantable-space quintile map ("where trees can go"), the top 25 hexes to
+  plant (cooling shown as value ± uncertainty, plus existing-canopy and
+  plantable-space columns), and the biggest achievable single-hex cooling win.
 
 Every page carries a **City** selector in the filter bar and is city-agnostic —
 new cities appear automatically.

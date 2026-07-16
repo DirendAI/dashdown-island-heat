@@ -34,6 +34,14 @@ WHERE h.city_id = COALESCE(
   (SELECT MIN(city_id) FROM cities))
 ```
 
+```sql uncertainty
+SELECT AVG(cooling_uncertainty_c) AS mean_uncertainty
+FROM hexes h
+WHERE h.city_id = COALESCE(
+  (SELECT MIN(city_id) FROM cities WHERE name = '${city}'),
+  (SELECT MIN(city_id) FROM cities))
+```
+
 <Dropdown name="city" data={cities} column="name" label="City" bar />
 
 How well the LightGBM model explains a city's heat, what drives its predictions,
@@ -80,3 +88,14 @@ for testing, so a test hex has no training neighbour to leak from. The R² above
 therefore a measure of genuine generalisation to **unseen ground** — the property
 you need before trusting the model's cooling predictions on new areas or a new
 city.
+
+## Ensemble uncertainty in the cooling estimate
+
+Spatial CV trains **five** fold models, not one. `cooling_uncertainty_c` is the
+standard deviation of the plantability-constrained cooling estimate across
+those five: how much the greening counterfactual's answer shifts depending on
+which hexes it happened to train on. It's an **ensemble-honesty measure**, not
+a formal confidence interval — a wide spread flags a hex where the fold models
+disagree, a narrow one where they agree.
+
+<Counter data={uncertainty} column="mean_uncertainty" format="number" decimals=2 suffix="°C" label="Mean cooling uncertainty across hexes" />

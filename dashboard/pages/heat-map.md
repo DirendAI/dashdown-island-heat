@@ -81,6 +81,12 @@ from the heat map so the semantics read naturally: **dark green = highest NDVI**
   color="#a6611a,#d8b365,#c2e699,#78c679,#238443"
   height=520 title="Vegetation (NDVI) by hex (quintile bands)" />
 
+:::note
+NDVI blends all vegetation together. The v0.2 planting model splits it
+further — existing canopy (`tree_fraction`) and open, plantable ground
+(`plantable_fraction`) are broken out on [Planting priorities](/priorities).
+:::
+
 ## Heat vs greenness
 
 Plotting the two against each other collapses the maps into one relationship. The
