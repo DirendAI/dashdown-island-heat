@@ -28,17 +28,27 @@ Everything runs on **free, keyless data**:
    NDWI and a visible-band albedo proxy per hexagon (with the processing-baseline ≥ 04.00
    reflectance offset handled); Copernicus DEM adds elevation; OSM adds building footprint
    density, road density, distance to large water, and distance to parks.
-5. **Model** — a LightGBM regression predicts hexagon LST from the 9 surface/urban-form
+5. **Plantable space** — ESA WorldCover 10 m land cover gives each hexagon a
+   `plantable_fraction`: grass, shrub, crop and bare ground count fully, built-up land gets a
+   small street-pit/depaving credit (0.15), and water/wetland/existing forest count zero
+   (already-canopied land offers no *additional* planting room). `tree_fraction` records the
+   existing canopy share.
+6. **Model** — a LightGBM regression predicts hexagon LST from the 9 surface/urban-form
    features. Validation uses **spatial block cross-validation** (GroupKFold over coarser H3
    parent cells) so spatial autocorrelation can't leak between folds. SHAP values explain
    what drives the heat.
-6. **Greening counterfactual** — every hexagon's NDVI is raised to the 75th percentile of the
-   city's park hexagons (never lowered; cities with < 20 park hexes fall back to the 90th
-   percentile of all NDVI) and the model re-predicts LST. The drop, floored at zero, is
-   `predicted_cooling_c`: *the modeled payoff of greening that block*.
-7. **Priority score** — `heat percentile × normalized cooling × vulnerability` (vulnerability
-   uses income/age demographics for US cities, defaults to 1 elsewhere), normalized to [0, 1].
-8. Everything lands in one DuckDB file (`data/heat.duckdb`) that the Dashdown dashboard reads.
+7. **Greening counterfactual (plantability-constrained)** — the greening target is the 75th
+   percentile NDVI of the city's park hexagons (cities with < 20 park hexes fall back to the
+   90th percentile of all NDVI). Each hexagon closes the gap to that target **only in
+   proportion to its plantable fraction** — a fully-built block can't be modeled as a park,
+   and water or solid forest can't cool further. The re-predicted LST drop, floored at zero,
+   is `predicted_cooling_c`; `cooling_uncertainty_c` reports its spread across the spatial-CV
+   fold models.
+8. **Priority score** — `heat percentile × normalized achievable cooling × vulnerability`
+   (vulnerability uses income/age demographics for US cities, defaults to 1 elsewhere),
+   normalized to [0, 1]. Plantability enters through the constrained cooling itself, so
+   unplantable hexes rank at exactly zero.
+9. Everything lands in one DuckDB file (`data/heat.duckdb`) that the Dashdown dashboard reads.
 
 ## Quick start
 
@@ -86,10 +96,14 @@ processed city is instantly explorable, and adding a brand-new one is a single
 
 Two cities processed with the identical, unmodified pipeline:
 
-| City | Hexes | Summer LST (min/mean/max °C) | Spatial-CV R² | MAE °C | Max predicted cooling |
-| ---- | ----- | ---------------------------- | ------------- | ------ | --------------------- |
-| Ghent, Belgium | 1753 | 23.2 / 35.5 / 51.7 | 0.865 | 1.04 | 4.9 °C |
-| Ljubljana, Slovenia | 2559 | 25.5 / 31.6 / 46.7 | 0.953 | 0.69 | 4.6 °C |
+| City | Hexes | Summer LST (min/mean/max °C) | Spatial-CV R² | MAE °C | Plantable / existing canopy | Max achievable cooling |
+| ---- | ----- | ---------------------------- | ------------- | ------ | --------------------------- | ---------------------- |
+| Ghent, Belgium | 1753 | 23.2 / 35.5 / 51.7 | 0.865 | 1.04 | 0.34 / 0.28 | 3.5 ± 1.0 °C |
+| Ljubljana, Slovenia | 2559 | 25.5 / 31.6 / 46.7 | 0.953 | 0.69 | 0.29 / 0.57 | 2.1 ± 0.2 °C |
+
+(“Max achievable cooling” is plantability-constrained; the unconstrained v0.1 figures were
+4.9 °C and 4.6 °C — the constraint bites hardest where the apparent potential sat on water
+or land that is already forest, e.g. over half of Ljubljana.)
 
 The Landsat composite resolves the classic heat-island anatomy — hot dense core and
 industrial port corridor, cool canals and green periphery:
@@ -97,6 +111,13 @@ industrial port corridor, cool canals and green periphery:
 <p align="center">
   <img src="docs/img/heatmap_ghent-belgium.png" alt="Ghent land-surface temperature per hex" width="46%" />
   <img src="docs/img/heatmap_ljubljana-slovenia.png" alt="Ljubljana land-surface temperature per hex" width="42%" />
+</p>
+
+…and ESA WorldCover shows where new canopy can physically go — the two layers together are
+what the priority score ranks (hot **and** plantable):
+
+<p align="center">
+  <img src="docs/img/plantable_ghent-belgium.png" alt="Ghent plantable fraction per hex" width="46%" />
 </p>
 
 ## Screenshots
@@ -112,8 +133,9 @@ industrial port corridor, cool canals and green periphery:
 cities(city_id, name, country, centroid_lat, centroid_lon, processed_at, n_hexes)
 hexes(city_id, h3, lat, lon, geometry_wkt, mean_lst_c, ndvi, ndbi, ndwi, albedo,
       elevation, building_density, road_density, dist_water_m, dist_park_m,
+      plantable_fraction, tree_fraction,
       median_income, pct_over_65, pct_under_5,
-      predicted_lst_c, predicted_cooling_c, priority_score)
+      predicted_lst_c, predicted_cooling_c, cooling_uncertainty_c, priority_score)
 model_metrics(city_id, r2, mae, n_train, trained_at)
 feature_importance(city_id, feature, mean_abs_shap)
 ```
@@ -136,8 +158,16 @@ Run the tests with `uv run pytest`.
 - **LST ≠ air temperature.** Landsat measures skin/surface temperature on clear summer
   mid-mornings; it exaggerates rooftop/asphalt extremes relative to what a pedestrian feels,
   but ranks hot spots well.
-- **The greening counterfactual is model-based.** Raising NDVI in feature space approximates
-  "plant trees here"; it inherits the model's blind spots (e.g. irrigation, building shade).
+- **The greening counterfactual is model-based, not causal.** The model learns *cross-sectional*
+  associations between greenness and heat; the counterfactual applies them within a hex. The
+  plantability constraint keeps it inside physically possible feature combinations (a built
+  block can no longer be modeled as a park, water and existing forest are excluded), and
+  `cooling_uncertainty_c` exposes the ensemble spread — but the estimate still inherits the
+  model's blind spots (irrigation, building shade, species choice) and is a *screening*
+  number, not an engineering prediction.
+- **The street-pit credit is an assumption.** Built-up land counts as 15 % plantable
+  (`PLANTABLE_CLASS_WEIGHTS` in `config.py`); dense-core rankings are sensitive to that one
+  transparent, configurable number.
 - **Albedo is a crude proxy** (mean visible reflectance), not a BRDF-corrected product.
 - Cities whose OSM coverage is thin will have noisier building/road features.
 - Tropical cities (|lat| < 10°) composite over whole years instead of "summer".

@@ -403,10 +403,12 @@ heat-island list-cities
 heat-island remove-city <city_id>
 heat-island preview "Ghent, Belgium" [--resolution 9] [--out out/ghent.png]   # milestone-1 sanity
 ```
-- `add-city` pipeline order: boundary → grid → LST → S2 → DEM → OSM → demographics →
-  build_feature_table → train_and_evaluate → run_greening → compute_priority → upsert_city.
+- `add-city` pipeline order: boundary → grid → LST → S2 → DEM → land cover → OSM →
+  demographics → build_feature_table → train_and_evaluate → run_greening (with fold_models) →
+  compute_priority → upsert_city.
   Rich progress/status lines per step; final rich table: n_hexes, LST min/mean/max, R², MAE,
-  top-3 SHAP features, max predicted cooling, #hexes with priority ≥ 0.8.
+  top-3 SHAP features, plantable/tree-cover means, max predicted cooling (± fold-model
+  uncertainty), #hexes with priority ≥ 0.8.
 - `preview`: boundary + grid + `viz.plot_city_grid` + print `grid_stats` (n_hexes, area).
 - Friendly failure: catch `PipelineError` → red message, exit 1 (no traceback spam).
 
