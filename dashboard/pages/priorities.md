@@ -58,7 +58,10 @@ SELECT
   ROUND(ndvi, 2)               AS ndvi,
   ROUND(tree_fraction, 2)      AS tree_fraction,
   ROUND(plantable_fraction, 2) AS plantable_fraction,
-  printf('%.2f ± %.2f', predicted_cooling_c, cooling_uncertainty_c) AS predicted_cooling_c,
+  -- COALESCE keeps the cooling value visible when uncertainty is NULL (a city
+  -- migrated from v0.1 but not yet re-run) — printf would blank the whole string.
+  printf('%.2f', predicted_cooling_c)
+    || COALESCE(' ± ' || printf('%.2f', cooling_uncertainty_c), '') AS predicted_cooling_c,
   ROUND(priority_score, 2)     AS priority_score
 FROM hexes h
 WHERE h.city_id = COALESCE(
@@ -135,4 +138,4 @@ greened to local park level, followed by the spread of that estimate across
 the 5 spatial-CV fold models. `tree_fraction` is existing canopy share;
 `plantable_fraction` is how much of the hex could still take new trees.
 
-<Table data={top25} title="Highest-priority hexes" sort="priority_score desc" />
+<Table data={top25} title="Highest-priority hexes" />
