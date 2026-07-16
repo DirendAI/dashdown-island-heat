@@ -88,8 +88,8 @@ Two cities processed with the identical, unmodified pipeline:
 
 | City | Hexes | Summer LST (min/mean/max °C) | Spatial-CV R² | MAE °C | Max predicted cooling |
 | ---- | ----- | ---------------------------- | ------------- | ------ | --------------------- |
-| Ghent, Belgium | 1753 | 23.2 / 35.5 / 51.7 | 0.863 | 1.04 | 5.6 °C |
-| Ljubljana, Slovenia | 2559 | 25.5 / 31.6 / 46.7 | 0.952 | 0.69 | 4.2 °C |
+| Ghent, Belgium | 1753 | 23.2 / 35.5 / 51.7 | 0.865 | 1.04 | 4.9 °C |
+| Ljubljana, Slovenia | 2559 | 25.5 / 31.6 / 46.7 | 0.953 | 0.69 | 4.6 °C |
 
 The Landsat composite resolves the classic heat-island anatomy — hot dense core and
 industrial port corridor, cool canals and green periphery:

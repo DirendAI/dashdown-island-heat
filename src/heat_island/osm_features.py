@@ -191,6 +191,9 @@ def _safe_fetch(fn, what: str):
 
 def _fetch_road_edges(boundary: CityBoundary) -> gpd.GeoDataFrame:
     graph = ox.graph.graph_from_polygon(boundary.geometry, network_type="drive", retain_all=True)
+    # graph_from_polygon returns a directed MultiDiGraph: without this collapse every
+    # two-way street appears as two reciprocal edges and road_density inflates ~1.6x.
+    graph = ox.convert.to_undirected(graph)
     return ox.convert.graph_to_gdfs(graph, nodes=False)
 
 

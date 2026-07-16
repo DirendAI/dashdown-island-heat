@@ -47,6 +47,7 @@ def _lgb_params(cfg: PipelineConfig) -> dict:
         num_leaves=31,
         min_child_samples=20,
         subsample=0.8,
+        subsample_freq=1,  # without this LightGBM never activates row bagging (subsample is inert)
         colsample_bytree=0.8,
         random_state=cfg.seed,
         n_jobs=-1,

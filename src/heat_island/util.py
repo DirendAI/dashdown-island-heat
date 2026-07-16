@@ -109,8 +109,9 @@ def summer_windows(lat: float, today: dt.date | None = None, years_back: int = 3
         for y in range(last, last - years_back, -1):
             windows.append((f"{y}-06-01", f"{y}-08-31"))
         return windows
-    # southern: summer labelled by its ending year (Dec y-1 → Feb y)
-    last_end = today.year if today >= dt.date(today.year, 2, 28) else today.year - 1
+    # southern: summer labelled by its ending year (Dec y-1 → Feb y); leap-aware completeness
+    feb_end_now = 29 if (today.year % 4 == 0 and (today.year % 100 != 0 or today.year % 400 == 0)) else 28
+    last_end = today.year if today >= dt.date(today.year, 2, feb_end_now) else today.year - 1
     for y in range(last_end, last_end - years_back, -1):
         feb_end = 29 if (y % 4 == 0 and (y % 100 != 0 or y % 400 == 0)) else 28
         windows.append((f"{y - 1}-12-01", f"{y}-02-{feb_end:02d}"))

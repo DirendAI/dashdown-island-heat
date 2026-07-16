@@ -136,6 +136,18 @@ def _sentinel_income(value: float) -> float:
     return value
 
 
+def _num(value) -> float:
+    """Null-safe ACS cell parse: JSON null / missing / unparseable -> NaN, never an exception.
+
+    ACS suppresses some tract cells as null; one bad cell must only lose that tract's value,
+    not (via an exception) the entire city's demographics.
+    """
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float("nan")
+
+
 def _parse_acs_rows(rows: list[list[str]]) -> pd.DataFrame:
     """ACS "array of arrays" response (header row + data rows) -> one row per tract."""
     header, *data_rows = rows
@@ -143,10 +155,10 @@ def _parse_acs_rows(rows: list[list[str]]) -> pd.DataFrame:
 
     parsed = []
     for rec in records:
-        income = _sentinel_income(float(rec[INCOME_VAR]))
-        total = float(rec[TOTAL_VAR])
-        under5 = sum(float(rec[v]) for v in UNDER5_VARS)
-        over65 = sum(float(rec[v]) for v in OVER65_VARS)
+        income = _sentinel_income(_num(rec.get(INCOME_VAR)))
+        total = _num(rec.get(TOTAL_VAR))
+        under5 = sum(_num(rec.get(v)) for v in UNDER5_VARS)
+        over65 = sum(_num(rec.get(v)) for v in OVER65_VARS)
         total_valid = total if total > 0 else float("nan")
         parsed.append(
             {

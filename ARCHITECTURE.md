@@ -216,7 +216,9 @@ def fetch_osm_features_per_hex(boundary, hex_gdf, cfg) -> pd.DataFrame
   lat/lon in 4326 — compute centroids in UTM, then transform centroid points back to 4326).
   `building_density` = Σ building area (UTM m²) / hex area (m²), clipped to [0, 1]. Missing → 0.
 - **Roads**: `graph_from_polygon(geom, network_type="drive", retain_all=True)` →
-  `graph_to_gdfs(G, nodes=False)`. Edge length: use the `length` attribute (meters). Assign
+  `ox.convert.to_undirected(G)` (collapse reciprocal two-way edges — a directed graph would
+  double-count them ~1.6×) → `graph_to_gdfs(G, nodes=False)`. Edge length: use the `length`
+  attribute (meters). Assign
   each edge to the hex of its geometry midpoint (`.interpolate(0.5, normalized=True)` in UTM →
   back-transform). `road_density` = Σ length_m / hex_area_km² → **km per km²** (divide m by
   1000). Missing → 0. If the graph fetch fails entirely (Overpass down), log WARNING and
@@ -227,8 +229,8 @@ def fetch_osm_features_per_hex(boundary, hex_gdf, cfg) -> pd.DataFrame
   nearest such polygon via `STRtree`; none found → `cfg.dist_cap_m`. Cap all at `dist_cap_m`.
 - **Parks**: same buffered fetch, tags `{"leisure": ["park", "garden", "nature_reserve"],
   "landuse": ["recreation_ground", "village_green", "cemetery"]}` → polygons. `dist_park_m`
-  analogous. `is_park` (bool) = hex centroid within any park polygon (STRtree `query` +
-  covers). No parks → dist capped, `is_park` all False.
+  analogous. `is_park` (bool) = hex centroid within any park polygon (STRtree `query` with
+  predicate "within"; boundary-exact containment is measure-zero and irrelevant here). No parks → dist capped, `is_park` all False.
 - Between the 4 Overpass-backed fetches sleep ~1 s (politeness; osmnx rate-limits too).
 
 ## demographics.py (US only, optional, must NEVER crash the pipeline)
@@ -294,7 +296,8 @@ def train_and_evaluate(df: pd.DataFrame, cfg: PipelineConfig) -> ModelResult
   equivalent to `hexgrid.hex_parents`) so it stays import-independent of hexgrid. `GroupKFold(n_splits=min(cfg.cv_folds, n_unique_groups))`; if <2 groups, plain
   `KFold(2)` + WARNING. Collect out-of-fold predictions → single global R² and MAE.
 - Params (fixed): `n_estimators=400, learning_rate=0.05, num_leaves=31, min_child_samples=20,
-  subsample=0.8, colsample_bytree=0.8, random_state=cfg.seed, n_jobs=-1, verbosity=-1`.
+  subsample=0.8, subsample_freq=1, colsample_bytree=0.8, random_state=cfg.seed, n_jobs=-1,
+  verbosity=-1` (`subsample_freq=1` is required or LightGBM leaves row bagging off).
 - Final model refit on all rows. SHAP: `shap.TreeExplainer(final_model).shap_values(X)` →
   `mean(|values|, axis=0)` per feature.
 - Keep the module free of city-specific logic so a global multi-city model can replace it

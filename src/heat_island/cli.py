@@ -92,7 +92,7 @@ def add_city(
     from . import db
     from .features import build_feature_table
     from .model import train_and_evaluate
-    from .simulate import compute_priority, greening_target_ndvi, run_greening
+    from .simulate import compute_priority, run_greening
 
     cfg = PipelineConfig()
     if resolution is not None:
@@ -112,9 +112,7 @@ def add_city(
         console.print("Training LightGBM with spatial cross-validation…")
         result = train_and_evaluate(df, cfg)
 
-        target = greening_target_ndvi(df, cfg)
-        console.print(f"Greening counterfactual: raising NDVI to {target:.3f} where below")
-        df = run_greening(df, result.model, cfg)
+        df = run_greening(df, result.model, cfg)  # logs the greening NDVI target itself
         df = compute_priority(df)
 
         db.upsert_city(cfg.db_path, boundary, df, result)
