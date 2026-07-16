@@ -168,6 +168,7 @@ zero → raise `DataUnavailableError` naming the collection and windows tried.
 def fetch_lst_per_hex(boundary, cfg) -> pd.DataFrame        # h3, mean_lst_c
 def fetch_s2_indices_per_hex(boundary, cfg) -> pd.DataFrame # h3, ndvi, ndbi, ndwi, albedo
 def fetch_elevation_per_hex(boundary, cfg) -> pd.DataFrame  # h3, elevation
+def fetch_landcover_per_hex(boundary, cfg) -> pd.DataFrame  # h3, plantable_fraction, tree_fraction
 ```
 
 **Landsat LST** (`fetch_lst_per_hex`):
@@ -185,11 +186,11 @@ def fetch_elevation_per_hex(boundary, cfg) -> pd.DataFrame  # h3, elevation
 **Sentinel-2** (`fetch_s2_indices_per_hex`):
 - Bands `B02 B03 B04 B08 B11 SCL` at `cfg.s2_res_deg` (~20 m; B11 native 20 m).
 - Mask: SCL in {0,1,3,8,9,10} → NaN (nodata, saturated, shadow, cloud med/high, cirrus).
-- **Processing-baseline offset**: for each item, if
-  `float(item.properties.get("s2:processing_baseline", "0")) >= 4.0` (or missing and
-  datetime ≥ 2022-01-25) then reflectance = (DN − 1000)/10000 else DN/10000. Implement by
-  building a per-time offset DataArray (dims=("time",)) and broadcasting — do not loop pixels.
-  Clip reflectance to [0, 1].
+- **Processing-baseline offset**: reflectance = (DN − 1000)/10000 for acquisitions on/after
+  2022-01-25 (the baseline-04.00 rollout date), else DN/10000. The rule is keyed on the
+  loaded time axis (a per-time offset DataArray, dims=("time",), broadcast — no pixel loops)
+  rather than per-item `s2:processing_baseline`, because `groupby="solar_day"` composites
+  items so per-item properties no longer map 1:1 onto time slices. Clip reflectance to [0, 1].
 - Median-composite each band over time **first**, then compute indices from the composite:
   `ndvi=(B08−B04)/(B08+B04)`, `ndbi=(B11−B08)/(B11+B08)`, `ndwi=(B03−B08)/(B03+B08)`,
   `albedo = (B02+B03+B04)/3` (documented crude visible-band proxy). Guard zero denominators → NaN.
@@ -199,9 +200,20 @@ def fetch_elevation_per_hex(boundary, cfg) -> pd.DataFrame  # h3, elevation
 filter/time filter (it's static; search without datetime). Median over items if several tiles
 overlap, else squeeze. Aggregate mean per hex.
 
-All three: write parquet cache `lst_res{r}.parquet` / `s2_res{r}.parquet` /
-`dem_res{r}.parquet`; on hit, read and return immediately (log "cache hit").
-Wrap `search().item_collection()` and `.compute()` in `retry_call`.
+**Land cover** (`fetch_landcover_per_hex`): ESA WorldCover, collection `esa-worldcover`,
+asset `map` (categorical 10 m map, class codes 10..100), static — no cloud/datetime filter,
+but if the search returns multiple product versions keep only the items of the LATEST
+version (property `esa_worldcover:product_version`; fall back to latest item datetime).
+Load at `cfg.landcover_res_deg` in EPSG:4326; class 0 / nodata → NaN. Map classes to values
+**per time/tile slice first**, then median-composite, then hex-mean (never take a median of
+raw categorical codes): `plantable = config.PLANTABLE_CLASS_WEIGHTS[class]` (vectorized
+lookup; unknown classes → 0.0) and `tree = (class == config.LANDCOVER_TREE_CLASS)`.
+`plantable_fraction` = hex mean of plantable weights ∈ [0, 1]; `tree_fraction` = hex mean of
+the tree indicator ∈ [0, 1].
+
+All four: write parquet cache `lst_res{r}.parquet` / `s2_res{r}.parquet` /
+`dem_res{r}.parquet` / `landcover_res{r}.parquet`; on hit, read and return immediately
+(log "cache hit"). Wrap `search().item_collection()` and `.compute()` in `retry_call`.
 
 ## osm_features.py
 
@@ -216,7 +228,9 @@ def fetch_osm_features_per_hex(boundary, hex_gdf, cfg) -> pd.DataFrame
   lat/lon in 4326 — compute centroids in UTM, then transform centroid points back to 4326).
   `building_density` = Σ building area (UTM m²) / hex area (m²), clipped to [0, 1]. Missing → 0.
 - **Roads**: `graph_from_polygon(geom, network_type="drive", retain_all=True)` →
-  `graph_to_gdfs(G, nodes=False)`. Edge length: use the `length` attribute (meters). Assign
+  `ox.convert.to_undirected(G)` (collapse reciprocal two-way edges — a directed graph would
+  double-count them ~1.6×) → `graph_to_gdfs(G, nodes=False)`. Edge length: use the `length`
+  attribute (meters). Assign
   each edge to the hex of its geometry midpoint (`.interpolate(0.5, normalized=True)` in UTM →
   back-transform). `road_density` = Σ length_m / hex_area_km² → **km per km²** (divide m by
   1000). Missing → 0. If the graph fetch fails entirely (Overpass down), log WARNING and
@@ -227,15 +241,16 @@ def fetch_osm_features_per_hex(boundary, hex_gdf, cfg) -> pd.DataFrame
   nearest such polygon via `STRtree`; none found → `cfg.dist_cap_m`. Cap all at `dist_cap_m`.
 - **Parks**: same buffered fetch, tags `{"leisure": ["park", "garden", "nature_reserve"],
   "landuse": ["recreation_ground", "village_green", "cemetery"]}` → polygons. `dist_park_m`
-  analogous. `is_park` (bool) = hex centroid within any park polygon (STRtree `query` +
-  covers). No parks → dist capped, `is_park` all False.
+  analogous. `is_park` (bool) = hex centroid within any park polygon (STRtree `query` with
+  predicate "within"; boundary-exact containment is measure-zero and irrelevant here). No parks → dist capped, `is_park` all False.
 - Between the 4 Overpass-backed fetches sleep ~1 s (politeness; osmnx rate-limits too).
 
 ## demographics.py (US only, optional, must NEVER crash the pipeline)
 
 ```python
-def fetch_demographics_per_hex(boundary, hex_gdf, cfg) -> pd.DataFrame
+def fetch_demographics_per_hex(boundary, hex_gdf, cfg, *, fetch_json=_fetch_json) -> pd.DataFrame
     # h3, median_income, pct_over_65, pct_under_5  (may be empty df with those columns)
+    # fetch_json is the injectable HTTP layer (tests pass a fake; default wraps requests+retry)
 ```
 - Gate: `country` contains "United States" (Nominatim display_name for US cities ends with
   "United States"). Else return empty frame (columns present, zero rows).
@@ -262,14 +277,19 @@ def fetch_demographics_per_hex(boundary, hex_gdf, cfg) -> pd.DataFrame
 def build_feature_table(boundary, cfg) -> gpd.GeoDataFrame
 ```
 - Canonical grid = `polygon_to_hexes(boundary.geometry, cfg.h3_resolution)` → `hexes_to_gdf`.
-- Left-join satellite (LST, S2, DEM), OSM, demographics frames onto the grid by `h3`.
+- Left-join satellite (LST, S2, DEM, land cover), OSM, demographics frames onto the grid by `h3`.
 - Drop hexes with NaN `mean_lst_c` **or** NaN `ndvi` (satellite coverage gaps) — log the count.
 - Fills: `elevation` → city median; `dist_water_m`/`dist_park_m` → `cfg.dist_cap_m`;
   `building_density`/`road_density` → 0; `ndbi`/`ndwi`/`albedo` → city median.
+  `plantable_fraction`/`tree_fraction`: per-row NaN → city median; if the land-cover fetch
+  failed entirely (columns absent) → plantable 1.0 (unconstrained legacy) / tree 0.0 + WARNING.
   Demographics stay NaN (nullable). `is_park` → False.
 - Enforce `cfg.min_hexes` (else `PipelineError`: city too small / no coverage).
 - Returns GeoDataFrame with: h3, lat, lon, geometry, is_park, all 9 model features
-  (`config.FEATURES` order), mean_lst_c, and the 3 demographic columns.
+  (`config.FEATURES` order), plantable_fraction, tree_fraction, mean_lst_c, and the 3
+  demographic columns. (`plantable_fraction`/`tree_fraction` are intervention-layer inputs,
+  deliberately NOT in `FEATURES`: tree cover's thermal effect is already carried by NDVI, and
+  keeping FEATURES stable keeps SHAP comparable across versions.)
 
 ## model.py
 
@@ -284,15 +304,19 @@ class ModelResult:
     mae: float                    # out-of-fold MAE (°C)
     n_train: int
     shap_importance: dict[str, float]   # feature -> mean |SHAP|
+    fold_models: list             # the k models trained on CV folds (fold order) —
+                                  # kept so simulate.py can spread the cooling estimate
 
 def train_and_evaluate(df: pd.DataFrame, cfg: PipelineConfig) -> ModelResult
 ```
 - X = df[FEATURES], y = df["mean_lst_c"].
-- **Spatial CV**: groups = `hex_parents(df.h3, cfg.cv_parent_offset)` (res-9 → res-7 blocks
-  ≈ 5 km). `GroupKFold(n_splits=min(cfg.cv_folds, n_unique_groups))`; if <2 groups, plain
+- **Spatial CV**: groups = the H3 parent of each hex at `res - cfg.cv_parent_offset`
+  (res-9 → res-7 blocks ≈ 5 km). model.py computes this locally (`_spatial_groups`,
+  equivalent to `hexgrid.hex_parents`) so it stays import-independent of hexgrid. `GroupKFold(n_splits=min(cfg.cv_folds, n_unique_groups))`; if <2 groups, plain
   `KFold(2)` + WARNING. Collect out-of-fold predictions → single global R² and MAE.
 - Params (fixed): `n_estimators=400, learning_rate=0.05, num_leaves=31, min_child_samples=20,
-  subsample=0.8, colsample_bytree=0.8, random_state=cfg.seed, n_jobs=-1, verbosity=-1`.
+  subsample=0.8, subsample_freq=1, colsample_bytree=0.8, random_state=cfg.seed, n_jobs=-1,
+  verbosity=-1` (`subsample_freq=1` is required or LightGBM leaves row bagging off).
 - Final model refit on all rows. SHAP: `shap.TreeExplainer(final_model).shap_values(X)` →
   `mean(|values|, axis=0)` per feature.
 - Keep the module free of city-specific logic so a global multi-city model can replace it
@@ -304,12 +328,22 @@ def train_and_evaluate(df: pd.DataFrame, cfg: PipelineConfig) -> ModelResult
 def greening_target_ndvi(df, cfg) -> float
     # 75th percentile of ndvi among is_park hexes if ≥ 20 park hexes,
     # else 90th percentile of all ndvi (fallback, log it).
+    # An absent is_park column counts as zero park hexes (fallback path, no crash).
 
-def run_greening(df, model, cfg) -> pd.DataFrame   # adds predicted_lst_c, predicted_cooling_c
+def run_greening(df, model, cfg, fold_models=None) -> pd.DataFrame
+    # adds predicted_lst_c, predicted_cooling_c, cooling_uncertainty_c
 ```
 - `predicted_lst_c = model.predict(X)` (observed features).
-- Counterfactual: copy X, `ndvi_cf = max(ndvi, target)` (never lower a hex's NDVI!),
-  `predicted_cooling_c = clip(predicted_lst_c - model.predict(X_cf), 0, None)`.
+- **Plantability-constrained counterfactual**: a hex can only close the gap to the greening
+  target in proportion to its plantable share:
+  `gap = clip(target - ndvi, 0, None)`; `ndvi_cf = ndvi + plantable_fraction * gap`
+  (never lowers NDVI; plantable 0 — water, solid canopy — → no change → zero cooling; a
+  missing `plantable_fraction` column → 1.0 = the old unconstrained behaviour, with WARNING;
+  per-row NaN plantable → 1.0 for that row). `predicted_cooling_c = clip(predicted_lst_c -
+  model.predict(X_cf), 0, None)`.
+- **Uncertainty**: `cooling_uncertainty_c` = std across `fold_models` of
+  `(model_i.predict(X) - model_i.predict(X_cf))` (unclipped deltas — the honest spread of
+  the spatial-CV ensemble). `fold_models` None/empty → NaN column.
 
 ```python
 def compute_priority(df) -> pd.DataFrame           # adds priority_score in [0, 1]
@@ -321,6 +355,9 @@ def compute_priority(df) -> pd.DataFrame           # adds priority_score in [0, 
   (ranks pct=True within city); vulnerability = 0.5 + 0.5·v_raw ∈ [0.5, 1].
 - `raw = heat_rank * cooling_norm * vulnerability`; `priority_score = raw / raw.max()`
   (max 0 → all zeros). Guaranteed within [0, 1].
+- Deliberately **no** separate plantability multiplier here: feasibility already enters
+  through the constrained cooling (a zero-plantable hex has zero cooling and hence zero
+  priority); multiplying by `plantable_fraction` again would double-penalize dense cores.
 
 ## db.py (dashboard contract — EXACT schema)
 
@@ -333,8 +370,10 @@ CREATE TABLE IF NOT EXISTS hexes(
   mean_lst_c DOUBLE, ndvi DOUBLE, ndbi DOUBLE, ndwi DOUBLE, albedo DOUBLE,
   elevation DOUBLE, building_density DOUBLE, road_density DOUBLE,
   dist_water_m DOUBLE, dist_park_m DOUBLE,
+  plantable_fraction DOUBLE, tree_fraction DOUBLE,
   median_income DOUBLE, pct_over_65 DOUBLE, pct_under_5 DOUBLE,
-  predicted_lst_c DOUBLE, predicted_cooling_c DOUBLE, priority_score DOUBLE,
+  predicted_lst_c DOUBLE, predicted_cooling_c DOUBLE, cooling_uncertainty_c DOUBLE,
+  priority_score DOUBLE,
   PRIMARY KEY (city_id, h3));
 CREATE TABLE IF NOT EXISTS model_metrics(
   city_id TEXT PRIMARY KEY, r2 DOUBLE, mae DOUBLE, n_train INTEGER, trained_at TIMESTAMP);
@@ -344,7 +383,10 @@ CREATE TABLE IF NOT EXISTS feature_importance(
 
 ```python
 def connect(db_path) -> duckdb.DuckDBPyConnection   # mkdir parents, create tables
-def upsert_city(db_path, boundary, hex_df, metrics: ModelResult) -> None
+def upsert_city(db_path, boundary, hex_df, metrics) -> None
+    # boundary/metrics are duck-typed (BoundaryLike/MetricsLike Protocols): any objects with
+    # city_id/name/country/centroid_* and r2/mae/n_train/shap_importance attributes — db.py
+    # deliberately imports neither boundary.py nor model.py.
     # single transaction: DELETE all four tables WHERE city_id = ?, then INSERT.
     # geometry_wkt from hex geometry .wkt. n_hexes = len(hex_df). processed_at/trained_at = now UTC.
 def list_cities(db_path) -> pd.DataFrame            # cities joined with metrics
@@ -361,10 +403,12 @@ heat-island list-cities
 heat-island remove-city <city_id>
 heat-island preview "Ghent, Belgium" [--resolution 9] [--out out/ghent.png]   # milestone-1 sanity
 ```
-- `add-city` pipeline order: boundary → grid → LST → S2 → DEM → OSM → demographics →
-  build_feature_table → train_and_evaluate → run_greening → compute_priority → upsert_city.
+- `add-city` pipeline order: boundary → grid → LST → S2 → DEM → land cover → OSM →
+  demographics → build_feature_table → train_and_evaluate → run_greening (with fold_models) →
+  compute_priority → upsert_city.
   Rich progress/status lines per step; final rich table: n_hexes, LST min/mean/max, R², MAE,
-  top-3 SHAP features, max predicted cooling, #hexes with priority ≥ 0.8.
+  top-3 SHAP features, plantable/tree-cover means, max predicted cooling (± fold-model
+  uncertainty), #hexes with priority ≥ 0.8.
 - `preview`: boundary + grid + `viz.plot_city_grid` + print `grid_stats` (n_hexes, area).
 - Friendly failure: catch `PipelineError` → red message, exit 1 (no traceback spam).
 

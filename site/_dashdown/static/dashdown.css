@@ -1,0 +1,3902 @@
+/* Self-hosted Inter (variable, latin) — replaces the Google Fonts CDN @import
+   so the app needs no external request and works offline. URL is relative to
+   this stylesheet, so it resolves on the dev server and in static exports. */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('vendor/fonts/inter.woff2') format('woff2');
+}
+
+:root {
+  --sidebar-width: 260px;
+
+  /* --- Design tokens --------------------------------------------------------
+     Single source for the dashboard's spacing/radius/shadow values (lifted from
+     docs/design/mockups). Framework rules below reference these instead of
+     hard-coding literals; a project's static/custom.css loads last and can
+     override any of them (e.g. `:root { --dashdown-radius-card: 0; }`). */
+  --dashdown-radius-card: 0.75rem;    /* cards & card-like boxes (mockup rounded-xl) */
+  --dashdown-radius-control: 0.5rem;  /* nav links, inputs, small boxes (mockup rounded-lg) */
+  --dashdown-grid-gap: 1rem;          /* Grid / KPI-row cell gap (mockup gap-4) */
+  --dashdown-space-section: 1.5rem;   /* vertical rhythm between dashboard blocks */
+
+  /* Elevation scale. Cards used to sit flat (border only) on a single surface,
+     which read undifferentiated; these give a soft resting shadow plus a lift on
+     hover so data widgets feel like raised objects. Slate-tinted (not pure
+     black) so the shadow harmonizes with the slate palette in light mode. The
+     dark theme redefines these (black, higher alpha) since a slate shadow is
+     invisible on the slate-950 page — see the [data-theme="dark"] block. */
+  --dashdown-shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 1px 3px -1px rgb(15 23 42 / 0.07);
+  --dashdown-shadow-raised: 0 4px 12px rgb(15 23 42 / 0.10);
+  --dashdown-shadow-hover: 0 8px 24px -6px rgb(15 23 42 / 0.16), 0 3px 8px -4px rgb(15 23 42 / 0.10);
+}
+
+/* Graft the radius tokens onto DaisyUI's own radius variables for the shipped
+   light/dark themes, so DaisyUI-styled surfaces (`card`, `btn`, `select`, …)
+   follow the same tokens as the framework's CSS. Scoped to light/dark — a
+   project opting into another DaisyUI theme keeps that theme's own radii.
+   (This wins over vendor/tailwind.css by stylesheet order, and custom.css
+   still wins over this.) */
+[data-theme="light"],
+[data-theme="dark"] {
+  --rounded-box: var(--dashdown-radius-card);
+  --rounded-btn: var(--dashdown-radius-control);
+}
+
+/* Color tokens (from the design mockups): indigo primary + slate neutrals,
+   overriding DaisyUI's stock light/dark palettes. Values are oklch triplets
+   (DaisyUI's variable format). Surface mapping: --b1 = raised surfaces
+   (header / sidebar / cards), --b2 = the page background one step down,
+   --b3 = hairline borders. --bc2/--bc3 are the framework's secondary /
+   faint text tints (referenced throughout this file).
+   Like the radii: scoped to light/dark, overridable from custom.css. */
+[data-theme="light"] {
+  --p: 49.1% 0.27 292.58;       /* violet-700 #6d28d9 — distinctive vs. stock indigo, deep/premium */
+  --pc: 100% 0 0;
+  --b2: 98.42% 0.0034 247.86;   /* slate-50  #f8fafc */
+  --b3: 92.88% 0.0126 255.51;   /* slate-200 #e2e8f0 */
+  --bc: 20.77% 0.0398 265.75;   /* slate-900 #0f172a */
+  --bc2: 55.44% 0.0407 257.42;  /* slate-500 #64748b */
+  --bc3: 71.07% 0.0351 256.79;  /* slate-400 #94a3b8 */
+}
+
+[data-theme="dark"] {
+  --p: 70.2% 0.183 293.54;      /* violet-400 #a78bfa */
+  --pc: 100% 0 0;
+  --b1: 20.77% 0.0398 265.75;   /* slate-900 #0f172a */
+  --b2: 12.88% 0.0406 264.70;   /* slate-950 #020617 */
+  --b3: 27.95% 0.0368 260.03;   /* slate-800 #1e293b */
+  --bc: 92.88% 0.0126 255.51;   /* slate-200 #e2e8f0 */
+  --bc2: 71.07% 0.0351 256.79;  /* slate-400 #94a3b8 */
+  --bc3: 55.44% 0.0407 257.42;  /* slate-500 #64748b */
+
+  /* A slate-tinted shadow is invisible on the slate-950 page; use black with
+     higher alpha so dark-mode cards still read as raised on hover. */
+  --dashdown-shadow-card: 0 1px 2px rgb(0 0 0 / 0.30);
+  --dashdown-shadow-raised: 0 6px 18px rgb(0 0 0 / 0.45);
+  --dashdown-shadow-hover: 0 10px 28px -6px rgb(0 0 0 / 0.55), 0 4px 10px -4px rgb(0 0 0 / 0.4);
+}
+
+* { box-sizing: border-box; }
+
+/* Smooth page transitions */
+@view-transition {
+  navigation: auto;
+}
+::view-transition-old(root) {
+  animation: 120ms ease-out both fade-out;
+}
+::view-transition-new(root) {
+  animation: 150ms ease-in both fade-in;
+}
+@keyframes fade-out {
+  to { opacity: 0; }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+}
+
+/* Fallback fade-in for browsers without View Transitions */
+@supports not (view-transition-name: none) {
+  body {
+    animation: 150ms ease-in fade-in;
+  }
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.6;
+  /* Page sits one step below the raised surfaces (header/sidebar/cards on
+     --b1), per the mockups: slate-50 page / white cards in light mode. */
+  background-color: var(--fallback-b2, oklch(var(--b2) / 1));
+}
+
+/* DaisyUI theme customization */
+[data-theme="light"] {
+  --fallback-p1: #2563eb;
+}
+
+[data-theme="dark"] {
+  --fallback-p1: #3b82f6;
+}
+.dashdown-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.dashdown-brand {
+  text-decoration: none;
+  /* DaisyUI's `.btn` sets `flex-wrap: wrap`; on a tight mobile header that wraps
+     the logo + title onto two lines. Keep them on one line (the title
+     ellipsis-truncates instead — see the <768px rules below). */
+  flex-wrap: nowrap;
+}
+
+.dashdown-brand-logo {
+  height: 1.75rem;
+  width: auto;
+  max-width: 12rem;
+  margin-right: 0.5rem;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+/* --- Layout: sidebar + main -------------------------------------------- */
+.dashdown-layout {
+  display: flex;
+  min-height: calc(100vh - 65px);
+}
+.dashdown-sidebar {
+  width: var(--sidebar-width);
+  flex-shrink: 0;
+  overflow-y: auto;
+  position: sticky;
+  top: 65px;
+  height: calc(100vh - 65px);
+  /* Ensure sidebar is visible */
+  display: block !important;
+  visibility: visible !important;
+  /* Raised surface (--b1) on the --b2 page, hairline --b3 border — same
+     treatment as the header and cards, per the mockups. */
+  border-right: 1px solid var(--fallback-b3, oklch(var(--b3) / 1)) !important;
+  background-color: var(--fallback-b1, oklch(var(--b1) / 1)) !important;
+}
+.dashdown-main {
+  flex: 1;
+  min-width: 0;
+}
+
+/* --- Content column width ---------------------------------------------- */
+/* The centered reading column, shared by the topbar, the prose body, and the
+   footers so they stay in lockstep. Width is a per-page knob: <main> carries a
+   `data-page-width` (from a page's frontmatter `width:` / the `layout:` config
+   default) that sets the `--dashdown-content-max` var, which every column below
+   inherits. `l` is the historical full-dashboard width (was max-w-7xl); `m`/`s`
+   narrow it for article-style pages. */
+.dashdown-content-col {
+  max-width: var(--dashdown-content-max, 80rem);
+  margin-inline: auto;
+}
+.dashdown-main[data-page-width="s"] { --dashdown-content-max: 44rem; }
+.dashdown-main[data-page-width="m"] { --dashdown-content-max: 60rem; }
+.dashdown-main[data-page-width="l"] { --dashdown-content-max: 80rem; }
+
+/* --- Header hidden (frontmatter `header: false`) ------------------------ */
+/* The layout min-height and the sticky sidebar hardcode a 65px offset for the
+   sticky app header; with no header, reclaim that space so there's no phantom
+   gap at the top (e.g. a single-page blog, or header off but nav on). */
+.dashdown-layout.dashdown-no-header {
+  min-height: 100vh;
+}
+.dashdown-no-header .dashdown-sidebar {
+  top: 0;
+  height: 100vh;
+}
+
+/* --- Floating theme toggle (chrome-less pages) ------------------------- */
+/* Rendered whenever the header is hidden (unless `layout.theme_toggle` / a page's
+   `theme_toggle:` frontmatter opts out) — the header carries its own toggle when
+   shown. A small, unobtrusive sun/moon button pinned top-right so a reader of a
+   header-less page can still flip light/dark. Same raised-surface treatment as
+   the header/cards (--b1 fill, --b3 hairline, resting shadow). Which glyph shows
+   is CSS-driven off <html data-theme> (set pre-paint), so it never flashes both
+   icons before Alpine hydrates; the click flips the Alpine `theme`, re-stamping
+   data-theme so the store + OS-preference listener stay in sync. */
+.dashdown-theme-fab {
+  position: fixed;
+  top: 0.85rem;
+  right: 0.85rem;
+  z-index: 90;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border: 1px solid var(--fallback-b3, oklch(var(--b3) / 1));
+  border-radius: 9999px;
+  background-color: var(--fallback-b1, oklch(var(--b1) / 1));
+  color: var(--fallback-bc2, oklch(var(--bc2) / 1));
+  cursor: pointer;
+  box-shadow: var(--dashdown-shadow-card);
+  transition: color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+.dashdown-theme-fab:hover {
+  color: var(--fallback-bc, oklch(var(--bc) / 1));
+  box-shadow: var(--dashdown-shadow-raised);
+  transform: translateY(-1px);
+}
+.dashdown-theme-fab:focus-visible {
+  outline: 2px solid var(--fallback-p, oklch(var(--p) / 1));
+  outline-offset: 2px;
+}
+/* Icon swap: sun in light mode, moon in dark — keyed off <html data-theme>. */
+.dashdown-theme-fab-moon { display: none; }
+[data-theme="dark"] .dashdown-theme-fab-sun { display: none; }
+[data-theme="dark"] .dashdown-theme-fab-moon { display: inline-flex; }
+/* The fab shares the top-right corner with the page-action cluster (PDF/Embed)
+   that rides the top-bar. On a full-width page whose content reaches the viewport
+   edge they'd collide, so reserve a little corner space to hold the actions clear
+   of the fixed button. Harmless on narrow (centered) columns, where the actions
+   never reach that far right anyway. */
+.dashdown-has-theme-fab .dashdown-page-topbar {
+  padding-right: 3rem;
+}
+
+/* --- Desktop sidebar collapse ------------------------------- */
+/* The header toggle flips `sidebarCollapsed` (Alpine), which adds/removes the
+   `dashdown-sidebar-collapsed` class on <html> (also set pre-paint to avoid a
+   flash). When collapsed, hide the nav on desktop so <main> (flex:1) reclaims
+   the full width. Desktop-only: mobile keeps its own slide-in (governed by the
+   `.open` class / `sidebarOpen`), so this is scoped ≥768px and never fights it.
+   `!important` to beat the sidebar's own `display:block !important` base rule. */
+@media (min-width: 768px) {
+  .dashdown-sidebar-collapsed .dashdown-sidebar {
+    display: none !important;
+  }
+}
+/* The toggle control lives in the header but is desktop-only — on mobile the
+   slide-in hamburger does the job. */
+.dashdown-sidebar-toggle-wrap {
+  display: none;
+}
+@media (min-width: 768px) {
+  .dashdown-sidebar-toggle-wrap {
+    display: flex;
+    align-items: center;
+  }
+}
+/* Subtle affordance that the nav is hidden — dim the icon when collapsed. */
+.dashdown-sidebar-toggle.is-collapsed {
+  opacity: 0.6;
+}
+
+/* --- Embed mode (?_embed) ---------------------------------------------- */
+/* The `dashdown-embed` class is set on <html> pre-paint (page.html) and the
+   live server also omits the chrome HTML server-side. These rules hide the app
+   shell so a page can sit in an external <iframe>; the static build relies on
+   them entirely (its template always ships the chrome). The content + filter
+   bar live in <main>, so the page stays interactive. */
+.dashdown-embed .dashdown-header,
+.dashdown-embed .dashdown-sidebar,
+.dashdown-embed .dashdown-sidebar-overlay,
+.dashdown-embed .dashdown-breadcrumbs,
+.dashdown-embed .dashdown-page-topbar,
+.dashdown-embed .dashdown-build-stamp,
+.dashdown-embed .dashdown-made-with,
+.dashdown-embed .dashdown-theme-fab {
+  display: none !important;
+}
+.dashdown-embed .dashdown-layout {
+  min-height: 0;
+}
+.dashdown-embed .dashdown-main {
+  /* Trim the app's p-6 gutter — the embedding host controls outer spacing. */
+  padding: 1rem !important;
+}
+
+/* --- Embed snippet modal (the header "Embed" button) ------------------- */
+.dashdown-embed-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgb(0 0 0 / 0.45);
+}
+.dashdown-embed-modal[hidden] {
+  display: none;
+}
+.dashdown-embed-modal-panel {
+  width: min(40rem, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  background: var(--fallback-b1, oklch(var(--b1) / 1));
+  color: var(--fallback-bc, oklch(var(--bc) / 1));
+  border: 1px solid var(--fallback-b3, oklch(var(--b3) / 1));
+  border-radius: var(--dashdown-radius-card, 0.75rem);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.2);
+  padding: 1.25rem;
+}
+.dashdown-embed-modal-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin: 0 0 0.25rem;
+}
+.dashdown-embed-modal-hint {
+  font-size: 0.85rem;
+  opacity: 0.7;
+  margin: 0 0 0.75rem;
+}
+.dashdown-embed-modal-code {
+  width: 100%;
+  min-height: 7rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--fallback-b3, oklch(var(--b3) / 1));
+  border-radius: var(--dashdown-radius-control, 0.5rem);
+  background: var(--fallback-b2, oklch(var(--b2) / 1));
+  color: inherit;
+  resize: vertical;
+}
+.dashdown-embed-modal-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 0.9rem;
+}
+
+/* --- Sidebar nav -------------------------------------------------------- */
+.dashdown-sidenav-list {
+  list-style: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  display: block !important;
+  visibility: visible !important;
+}
+
+.dashdown-sidenav-list.p-4 {
+  padding: 1rem !important;
+}
+
+.dashdown-sidenav-list.pl-4 {
+  padding-left: 1rem !important;
+}
+
+.dashdown-sidenav-item {
+  margin: 0.125rem 0 !important;
+  display: block !important;
+  visibility: visible !important;
+}
+
+.dashdown-sidenav-item > * {
+  visibility: visible !important;
+}
+
+.dashdown-sidenav-link {
+  display: block;
+  padding: 0.375rem 0.75rem;
+  font-size: 0.875rem;
+  text-decoration: none;
+  border-radius: var(--dashdown-radius-control);
+  transition: all 0.12s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* Secondary tint at rest (mockup: slate-600 links on a white sidebar);
+     full text color on hover. Hover bg is a bc-tint so it reads as "one
+     step up" in both light and dark mode. */
+  color: var(--fallback-bc2, oklch(var(--bc2) / 1)) !important;
+  background: transparent !important;
+}
+
+.dashdown-sidenav-link:hover {
+  background: oklch(var(--bc) / 0.06) !important;
+  color: var(--fallback-bc, oklch(var(--bc) / 1)) !important;
+}
+
+.dashdown-sidenav-link.active {
+  background: oklch(var(--p) / 0.1) !important;
+  color: var(--fallback-p, oklch(var(--p) / 1)) !important;
+  font-weight: 500 !important;
+  box-shadow: inset 3px 0 0 var(--fallback-p, oklch(var(--p) / 1));
+}
+
+.dashdown-sidenav-link.active:hover {
+  background: oklch(var(--p) / 0.16) !important;
+  color: var(--fallback-p, oklch(var(--p) / 1)) !important;
+}
+
+.dashdown-sidenav-group {
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.375rem 0.75rem;
+  cursor: default;
+  color: var(--fallback-bc2, oklch(var(--bc2) / 1)) !important;
+}
+
+.dashdown-sidenav-icon {
+  margin-right: 0.25rem;
+}
+
+/* Collapsible nav groups (native <details>). The label keeps its
+   .dashdown-sidenav-link look; a caret on the right rotates when open. */
+.dashdown-sidenav-details {
+  margin: 0;
+}
+.dashdown-sidenav-summary {
+  display: flex;
+  align-items: center;
+  list-style: none;
+  cursor: pointer;
+}
+.dashdown-sidenav-summary::-webkit-details-marker {
+  display: none;
+}
+.dashdown-sidenav-summary > .dashdown-sidenav-link {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.dashdown-sidenav-caret {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.4rem;
+  border-radius: var(--dashdown-radius-control);
+  color: var(--fallback-bc3, oklch(var(--bc3) / 1));
+  transition: transform 0.15s ease, background 0.12s;
+}
+.dashdown-sidenav-caret svg {
+  width: 0.85rem;
+  height: 0.85rem;
+}
+.dashdown-sidenav-caret:hover {
+  background: oklch(var(--bc) / 0.06);
+  color: var(--fallback-bc, oklch(var(--bc) / 1));
+}
+.dashdown-sidenav-details[open] > .dashdown-sidenav-summary .dashdown-sidenav-caret {
+  transform: rotate(90deg);
+}
+
+/* Bundled named SVG nav icons (icon: home) — monochrome, follow currentColor. */
+.dashdown-nav-svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  display: inline-block;
+  vertical-align: -0.2em;
+  flex-shrink: 0;
+}
+
+/* --- Breadcrumbs -------------------------------------------------------- */
+.dashdown-breadcrumbs {
+  margin-bottom: var(--dashdown-space-section);
+}
+
+.dashdown-breadcrumbs a {
+  color: var(--fallback-bc2, oklch(var(--bc2) / 1));
+  text-decoration: none;
+}
+.dashdown-breadcrumbs a:hover { 
+  text-decoration: underline; 
+  color: var(--fallback-p, oklch(var(--p) / 1));
+}
+.dashdown-main h1 {
+  /* The primary title sits a clear step above h2 (1.5rem) so `#` reads as the
+     page/section head, not a sibling of `##`. Keeps the scale descending:
+     h1 1.875 → h2 1.5 → h3 1.25 → h4 1.125rem. */
+  font-size: 1.875rem !important;
+  font-weight: 600 !important;
+  line-height: 1.25;
+  margin-bottom: 1rem !important;
+  color: var(--fallback-bc, oklch(var(--bc) / 1)) !important;
+}
+
+/* Page header: H1 + optional `description:` subtitle on the left, optional
+   "Updated <time>" stamp pushed to the right. The title-block keeps its own
+   spacing so the subtitle tucks directly under the H1. */
+.dashdown-page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+}
+.dashdown-main .dashdown-page-header h1 {
+  margin-bottom: 0 !important;
+}
+.dashdown-main .dashdown-page-description {
+  margin-top: 0.35rem !important;
+  margin-bottom: 0 !important;
+  font-size: 0.95rem !important;
+  line-height: 1.5 !important;
+  color: var(--fallback-bc2, oklch(var(--bc2) / 1)) !important;
+}
+.dashdown-page-updated {
+  flex: none;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  color: var(--fallback-bc, oklch(var(--bc) / 0.55));
+}
+/* `dashdown build` provenance footer — when the static page was generated.
+   Muted and out of the way at the foot of the content; build-only (the dev
+   server never emits it), hidden in embeds + print like the other chrome. */
+.dashdown-build-stamp {
+  margin-top: 2.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--fallback-b3, oklch(var(--b3) / 1));
+  font-size: 0.75rem;
+  color: var(--fallback-bc2, oklch(var(--bc2) / 1));
+}
+/* "Made with Dashdown" attribution footer — shown on every page, muted and
+   centered well below the content (no divider line). Hidden in embed + print
+   like the build stamp (see those rule lists). */
+.dashdown-made-with {
+  margin-top: 4.5rem;
+  padding-bottom: 0;
+  font-size: 0.75rem;
+  text-align: center;
+  color: var(--fallback-bc2, oklch(var(--bc2) / 1));
+}
+/* On a static build the build stamp sits right above it — tighten the gap so
+   the two footers read as one block. */
+.dashdown-build-stamp + .dashdown-made-with {
+  margin-top: 0.5rem;
+}
+.dashdown-made-with a {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: none;
+}
+.dashdown-made-with a:hover {
+  color: var(--fallback-bc, oklch(var(--bc) / 1));
+  text-decoration: underline;
+}
+/* Project-wide global date filter, living in the sticky app header so it stays
+   reachable anywhere on a long page. The header's right group is a flex row
+   holding the date pill, then the theme toggle. (PDF/Embed moved to a per-page
+   action row — see .dashdown-page-actions.) */
+.dashdown-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Centered header search: absolutely positioned so it stays mid-bar no matter how
+   wide the brand or the action cluster get (the header is `position: sticky`, which
+   is the containing block). Capped + viewport-relative so it shrinks before it can
+   collide with the brand/actions. Hidden on mobile (moves to the menu, below). */
+.dashdown-header-search {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(38rem, 46vw);
+  max-width: 38rem;
+}
+.dashdown-header-search .dashdown-site-search {
+  margin: 0;
+  max-width: none;
+  width: 100%;
+}
+
+/* Mobile menu search: shown only inside the slide-in sidebar (header search is
+   hidden on mobile). On desktop the sidebar copy is hidden — the header has it. */
+.dashdown-sidebar-search {
+  display: none;
+}
+@media (max-width: 767px) {
+  .dashdown-header-search {
+    display: none;
+  }
+  .dashdown-sidebar-search {
+    display: block;
+    padding: 0.75rem 0.75rem 0.25rem;
+  }
+  .dashdown-sidebar-search .dashdown-site-search {
+    margin: 0;
+    max-width: none;
+    width: 100%;
+  }
+}
+.dashdown-header-date .dashdown-daterange {
+  margin: 0;
+}
+/* Let the brand flex item shrink (Tailwind's min-w-0 isn't in the vendored
+   bundle) so the date control + actions always fit the header width. */
+.dashdown-header .dashdown-brand-wrap {
+  min-width: 0;
+}
+
+/* In the sticky header the Custom start/end inputs render inline inside the pill,
+   which pushes them off the right edge of the bar (invisible). At every width, the
+   header copy floats them as a right-aligned popover panel below the control —
+   the same treatment mobile already used (now shared, not just <768px). */
+.dashdown-header-date {
+  position: relative;
+}
+.dashdown-header-date .dashdown-daterange-custom {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  z-index: 130;
+  /* Stack the start/end inputs as full-width rows so they line up, instead of
+     wrapping the inline pair (which left the "–" dangling and the inputs ragged). */
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.375rem;
+  min-width: 12rem;
+  padding: 0.5rem;
+  background: var(--fallback-b1, oklch(var(--b1) / 1));
+  border: 1px solid var(--fallback-b3, oklch(var(--b3) / 1));
+  border-radius: var(--dashdown-radius-control, 0.5rem);
+  box-shadow: var(--dashdown-shadow-raised, 0 4px 12px rgb(0 0 0 / 0.12));
+}
+.dashdown-header-date .dashdown-daterange-custom .input {
+  width: 100%;
+}
+/* The inline "–" separator makes no sense once the inputs are stacked. */
+.dashdown-header-date .dashdown-daterange-custom > span {
+  display: none;
+}
+
+/* Mobile: the navbar is tight, so compact the control further — drop the "Period:"
+   label (the select already names the active range) and cap the select width. */
+@media (max-width: 767px) {
+  .dashdown-header-date .dashdown-filter-pill-label {
+    display: none;
+  }
+  .dashdown-header-date .dashdown-filter-pill .select {
+    max-width: 8.5rem;
+  }
+  /* Let the brand title shrink/ellipsis so the date control + actions fit. */
+  .dashdown-brand-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  .dashdown-header .dashdown-brand {
+    max-width: 100%;
+  }
+  /* Hide the Embed button on mobile — it's an authoring affordance (copy a
+     paste-ready iframe snippet), not something a small-screen viewer needs. */
+  #dashdown-embed-btn {
+    display: none;
+  }
+}
+
+.dashdown-main h2 {
+  font-size: 1.5rem !important;
+  font-weight: 600 !important;
+  line-height: 1.25;
+  margin-top: 1.5rem !important;
+  margin-bottom: 1rem !important;
+  color: var(--fallback-bc, oklch(var(--bc) / 1)) !important;
+}
+
+.dashdown-main h3 {
+  font-size: 1.25rem !important;
+  font-weight: 600 !important;
+  line-height: 1.25;
+  margin-top: 1.25rem !important;
+  margin-bottom: 0.75rem !important;
+  color: var(--fallback-bc, oklch(var(--bc) / 1)) !important;
+}
+
+.dashdown-main h4 {
+  font-size: 1.125rem !important;
+  font-weight: 600 !important;
+  line-height: 1.25;
+  margin-top: 1rem !important;
+  margin-bottom: 0.5rem !important;
+  color: var(--fallback-bc, oklch(var(--bc) / 1)) !important;
+}
+
+.dashdown-main p {
+  margin-top: 1rem !important;
+  margin-bottom: 1rem !important;
+  color: var(--fallback-bc2, oklch(var(--bc2) / 1)) !important;
+  line-height: 1.6 !important;
+}
+
+.dashdown-chart { margin: var(--dashdown-space-section) 0; }
+.dashdown-table { margin: var(--dashdown-space-section) 0; }
+
+/* <Table> component cells keep each value on one line. These are the DaisyUI
+   `.table` cells (distinct from prose/markdown tables, which are
+   `table:not(.table)` and untouched). The browser default `white-space: normal`
+   wraps a narrow column mid-value — "Tadej / Pogačar", "Visma– / Lease a / Bike",
+   "UAE Team / Emirates / XRG" — which reads as broken rows in a data grid.
+   Pinning to `nowrap` lets the built-in `.overflow-x-auto` wrapper (table.js)
+   scroll a too-wide table horizontally instead, the conventional data-table
+   behavior. (The print/PDF path restores wrapping — paper has no scroll, so a
+   wide table there must reflow to fit the page; see the .dashdown-print rule.) */
+.dashdown-table .table th,
+.dashdown-table .table td {
+  white-space: nowrap;
+}
+
+/* Per-widget "filtered by" indicator. A small funnel marker that
+   appears in a data widget's corner **only while that widget is hovered/focused**
+   (kept unobtrusive — it's an affordance, not chrome) when ≥1 active filter
+   affects it; the tooltip (built in filter_badge.js) then lists each filter +
+   current value. Plain CSS, no Tailwind utilities. */
+.dashdown-filter-badge {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: var(--dashdown-radius-control, 0.5rem);
+  /* DaisyUI tokens are raw oklch triplets — wrap them as oklch(var(--x) / a),
+     never `var(--x)` directly (that yields an invalid color → transparent). */
+  color: oklch(var(--p) / 1);
+  background: color-mix(in oklch, oklch(var(--p) / 1) 12%, transparent);
+  cursor: help;
+  /* Hidden until the host widget is hovered/focused (revealed below). */
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+/* Reveal while hovering anywhere on the host widget card, or when the badge
+   itself is keyboard-focused (so it stays reachable without a mouse). */
+[data-async-component]:hover .dashdown-filter-badge,
+.dashdown-filter-badge:focus-within,
+.dashdown-filter-badge:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.dashdown-filter-badge:hover,
+.dashdown-filter-badge:focus-visible {
+  background: color-mix(in oklch, oklch(var(--p) / 1) 22%, transparent);
+  outline: none;
+}
+/* Inline placement inside the table toolbar — flows with the search/export
+   controls instead of floating in the corner. */
+.dashdown-filter-badge--inline {
+  position: relative; /* keep as the tooltip's positioning context */
+  top: auto;
+  right: auto;
+  width: 1.75rem;
+  height: 1.75rem;
+}
+/* "May be filtered" — params couldn't be determined statically (e.g. a Python
+   query); muted so it reads as advisory rather than definite. */
+.dashdown-filter-badge--maybe {
+  color: oklch(var(--bc2) / 1);
+  background: color-mix(in oklch, currentColor 10%, transparent);
+}
+
+/* Hover/focus tooltip listing the active filters. Opens **upward** from the
+   marker (into the card's top chrome / the gap above) rather than down over the
+   dense data rows below — a table's header row or a counter's value — where it
+   would read as colliding with that text. A high z-index keeps it above any
+   positioned card content. */
+.dashdown-filter-badge-tip {
+  position: absolute;
+  bottom: calc(100% + 0.375rem);
+  right: 0;
+  z-index: 60;
+  min-width: 9rem;
+  max-width: 16rem;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid oklch(var(--b3) / 1);
+  border-radius: var(--dashdown-radius-control, 0.5rem);
+  /* Opaque surface (same pattern the cards/header use) — a bare var(--b1) is an
+     invalid color and renders see-through. */
+  background: var(--fallback-b1, oklch(var(--b1) / 1));
+  box-shadow: var(--dashdown-shadow-raised, 0 4px 12px rgb(0 0 0 / 0.12));
+  color: oklch(var(--bc) / 1);
+  font-size: 0.75rem;
+  line-height: 1.3;
+  text-align: left;
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(4px);
+  transition: opacity 0.12s ease, transform 0.12s ease, visibility 0.12s;
+}
+.dashdown-filter-badge:hover .dashdown-filter-badge-tip,
+.dashdown-filter-badge:focus-visible .dashdown-filter-badge-tip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+.dashdown-filter-badge-tip-head {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+  color: oklch(var(--bc2) / 1);
+}
+.dashdown-filter-badge-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.dashdown-filter-badge-row + .dashdown-filter-badge-row {
+  margin-top: 0.125rem;
+}
+.dashdown-filter-badge-name {
+  color: oklch(var(--bc2) / 1);
+}
+.dashdown-filter-badge-val {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+/* Layout/typography come from the component's Tailwind classes; we bump the
+   headline a step larger than the markup's text-2xl and tighten tracking so the
+   big number reads as a confident data point rather than body copy. Figures stay
+   proportional: tabular digits (every digit as wide as a "0") only pay off when
+   numbers stack vertically, and they make a large standalone value look loose. */
+.dashdown-counter-value {
+  line-height: 1.1;
+  font-size: 1.875rem;
+  letter-spacing: -0.015em;
+}
+/* Full-bleed trend: the sparkline is a background layer pinned to the card's
+   bottom edge, spanning its whole width BEHIND the label/value — the card
+   reserves no extra height for it, so a spark tile is exactly as tall as a
+   plain one. The text floats above the layer, and a backdrop blur frosts the
+   trend where it passes under the text, keeping the number legible without
+   hiding the line. The layer clips *itself* to the card's rounded bottom
+   corners — the card can't take overflow:hidden because the "filtered by"
+   tooltip pops above its top edge. */
+/* Lift the two content rows above the spark layer. An allowlist on purpose:
+   a broad `> :not(.dashdown-counter-spark)` outranks the `position: absolute`
+   of overlay children appended later (filter badge, loading overlay), knocking
+   them into the flex flow — anything that isn't one of these two rows must
+   keep whatever positioning it declares for itself. */
+.dashdown-counter--spark > .dashdown-counter-head,
+.dashdown-counter--spark > .dashdown-counter-value {
+  position: relative;
+  z-index: 1;
+}
+/* Keep the text legible where the trend passes beneath it: a stacked
+   text-shadow halo in the card's surface color hugs the glyphs, dimming the
+   line only in their immediate surroundings. NOT backdrop-filter: any box-
+   shaped frost (blurred block children, or a masked pseudo-element) renders a
+   visible band/rectangle over the line — and mask-clipped backdrop-filter is
+   not portable across engines (Safari drops the mask, leaving an opaque box).
+   A halo follows the letterforms exactly, in any theme (--b1 = card surface). */
+.dashdown-counter--spark .dashdown-counter-label,
+.dashdown-counter--spark .dashdown-counter-value {
+  text-shadow:
+    0 0 4px var(--fallback-b1, oklch(var(--b1) / 1)),
+    0 0 8px var(--fallback-b1, oklch(var(--b1) / 1)),
+    0 0 12px var(--fallback-b1, oklch(var(--b1) / 1)),
+    0 1px 16px var(--fallback-b1, oklch(var(--b1) / 1));
+}
+.dashdown-counter-spark {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  /* Hug the card's lower half: tall enough to rise under the value text on a
+     compact tile, clamped so a grid-stretched tile doesn't blow the drawing up
+     into a wall of trend. */
+  height: clamp(2.5rem, 55%, 5rem);
+  pointer-events: none;
+  overflow: hidden;
+  /* Match the card's inner radius (its own radius minus the 1px border). */
+  border-radius: 0 0 calc(var(--rounded-box, 1rem) - 1px) calc(var(--rounded-box, 1rem) - 1px);
+}
+.dashdown-counter-spark svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+/* No endpoint marker: an HTML dot pinned to the layer's right edge can't sit
+   exactly on the stretched line's end at every slope (it needs a fixed px
+   inset, the line doesn't), and off-by-a-couple-px reads as a glitch. The
+   line simply runs to the edge. */
+
+/* Breakdown strip: a proportional composition bar ("one-row treemap") as an
+   in-flow footer — margin-top:auto pins it to the card's bottom in the flex
+   column, so a breakdown tile's label/value rows still line up with plain
+   neighbors in a KPI row (unlike the spark, segments are data and must not
+   run under text). The 2px flex gap is the separator — the card surface shows
+   through, no strokes around marks — and overflow:hidden on the rounded track
+   rounds only the two outer segment ends, keeping inner joins square. */
+.dashdown-counter-breakdown {
+  margin-top: auto;
+  padding-top: 0.75rem;
+}
+.dashdown-counter-breakdown-bar {
+  display: flex;
+  gap: 2px;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+}
+/* Zero-sum / empty result: the bare track reads as "nothing to compose". */
+.dashdown-counter-breakdown-bar.is-empty {
+  background: oklch(var(--bc) / 0.08);
+}
+.dashdown-counter-breakdown-seg {
+  /* flex-grow is set inline, proportional to the segment's share. */
+  flex-basis: 0;
+  /* A sliver category stays visible (and hoverable for its tooltip). */
+  min-width: 4px;
+}
+/* The fold-bucket for categories beyond the palette (hues are assigned in
+   fixed order, never cycled): a neutral ink tint in either theme. */
+.dashdown-counter-breakdown-seg--other,
+.dashdown-counter-breakdown-key i.is-other {
+  background: oklch(var(--bc) / 0.25);
+}
+/* Compact legend line: identity never rides on color alone at this size —
+   a dot carries the hue, the text wears the secondary/faint text tokens. */
+.dashdown-counter-breakdown-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.125rem 0.75rem;
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--fallback-bc2, oklch(var(--bc2) / 1));
+}
+.dashdown-counter-breakdown-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  white-space: nowrap;
+}
+.dashdown-counter-breakdown-key i {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  flex: none;
+}
+.dashdown-counter-breakdown-pct {
+  color: var(--fallback-bc3, oklch(var(--bc3) / 1));
+}
+
+/* Counter grid layout */
+.dashdown-counter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--dashdown-grid-gap);
+  margin: var(--dashdown-space-section) 0;
+}
+.dashdown-table-title { 
+  font-weight: 600; 
+  margin-bottom: 0.75rem; 
+  color: var(--fallback-bc2, oklch(var(--bc2) / 1));
+}
+.dashdown-table-more { 
+  color: var(--fallback-bc3, oklch(var(--bc3) / 1)); 
+  font-size: 0.875rem; 
+  margin-top: 0.5rem;
+}
+/* <Ask />: LLM commentary card. Card shell/label come from the same Tailwind
+   classes as <Counter />; only the prose body, shimmer, and refresh button
+   need rules here. */
+.dashdown-ask { margin: var(--dashdown-space-section) 0; }
+.dashdown-ask-body {
+  margin-top: 0.57em;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--fallback-bc2, oklch(var(--bc2) / 1));
+}
+/* The answer arrives as rendered markdown — rein in the .dashdown-main
+   defaults so prose sits tight inside the card. Everything below is em-based
+   (not rem): the <Ask font_size=…> attr sets font-size on the body, and em
+   makes spacing, tables, and code scale with it — rem would pin them to the
+   root and the knob would resize text only. Values are the old rem numbers
+   converted at the 0.875rem default, so the default look is unchanged. */
+.dashdown-ask-body p { margin: 0 0 0.57em !important; }
+.dashdown-ask-body p:last-child { margin-bottom: 0 !important; }
+.dashdown-ask-body ul,
+.dashdown-ask-body ol { margin: 0 0 0.57em; padding-left: 1.43em; }
+.dashdown-ask-body li { margin: 0.17em 0; }
+/* Full markdown answer surface — compact variants of the page-prose look, so
+   a table, code block, heading, or blockquote in an answer reads as designed
+   rather than unstyled. render_markdown_text() stays minimal (CommonMark +
+   tables, html off) — this styles what it already emits, nothing more.
+   Headings: models favor ##/### even when told to be brief, and .dashdown-main
+   h1–h4 (page-heading sizes, !important) would otherwise reach in here — the
+   !important + later-in-file rules below take the tie. All levels collapse to
+   near-body sizes: inside a commentary card a heading is a label, not a title. */
+.dashdown-ask-body h1,
+.dashdown-ask-body h2 { font-size: 1.15em !important; }
+.dashdown-ask-body h3 { font-size: 1.1em !important; }
+.dashdown-ask-body h4,
+.dashdown-ask-body h5,
+.dashdown-ask-body h6 { font-size: 1em !important; }
+.dashdown-ask-body h1,
+.dashdown-ask-body h2,
+.dashdown-ask-body h3,
+.dashdown-ask-body h4,
+.dashdown-ask-body h5,
+.dashdown-ask-body h6 {
+  font-weight: 600 !important;
+  line-height: 1.35;
+  margin: 1em 0 0.4em !important;
+  color: var(--fallback-bc, oklch(var(--bc) / 1)) !important;
+}
+.dashdown-ask-body h1:first-child,
+.dashdown-ask-body h2:first-child,
+.dashdown-ask-body h3:first-child,
+.dashdown-ask-body h4:first-child,
+.dashdown-ask-body h5:first-child,
+.dashdown-ask-body h6:first-child { margin-top: 0 !important; }
+/* The extra .dashdown-ask + :not(.table) out-rank .dashdown-prose
+   table:not(.table) (the page-prose table rules, later in this file) — same
+   tokens, tighter metrics. display:block + max-content lets a wide table
+   scroll inside the card instead of blowing out its width (answers get no
+   scroll-wrapper from the page pipeline). */
+.dashdown-ask .dashdown-ask-body table:not(.table) {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 0.6em 0;
+  font-size: 0.95em;
+  border: 1px solid var(--fallback-b3, oklch(var(--b3) / 1));
+}
+.dashdown-ask .dashdown-ask-body table:not(.table) th,
+.dashdown-ask .dashdown-ask-body table:not(.table) td {
+  padding: 0.35em 0.6em;
+  border: 1px solid var(--fallback-b3, oklch(var(--b3) / 1));
+  text-align: left;
+  vertical-align: top;
+}
+.dashdown-ask .dashdown-ask-body table:not(.table) thead th {
+  background: var(--fallback-b2, oklch(var(--b2) / 1));
+  font-weight: 600;
+  color: var(--fallback-bc, oklch(var(--bc) / 1));
+}
+.dashdown-ask-body code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+  font-size: 0.9em;
+  background: var(--fallback-b2, oklch(var(--b2) / 1));
+  padding: 0.1em 0.35em;
+  border-radius: 0.3em;
+}
+/* Answer code fences are plain <pre><code> — render_markdown_text has no
+   Pygments pass, so none of the .dashdown-code machinery applies here. */
+.dashdown-ask-body pre {
+  background: var(--fallback-b2, oklch(var(--b2) / 1));
+  border: 1px solid var(--fallback-b3, oklch(var(--b3) / 1));
+  border-radius: var(--dashdown-radius-control);
+  padding: 0.7em 0.9em;
+  margin: 0.6em 0;
+  overflow-x: auto;
+  line-height: 1.5;
+}
+.dashdown-ask-body pre code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  white-space: pre;
+}
+.dashdown-ask-body blockquote {
+  margin: 0.6em 0;
+  padding: 0.1em 0 0.1em 0.9em;
+  border-left: 3px solid var(--fallback-b3, oklch(var(--b3) / 1));
+  color: var(--fallback-bc3, oklch(var(--bc3) / 1));
+}
+/* Bold pops to full-contrast ink — the body's secondary tone would otherwise
+   leave **key numbers** looking like ordinary text. */
+.dashdown-ask-body strong { color: var(--fallback-bc, oklch(var(--bc) / 1)); }
+.dashdown-ask-body hr {
+  border: 0;
+  border-top: 1px solid var(--fallback-b3, oklch(var(--b3) / 1));
+  margin: 0.8em 0;
+}
+/* In-flight SSE text: the raw model stream shown as escaped plain text until
+   the final server-rendered HTML swaps in. Preserve the markdown line breaks. */
+.dashdown-ask-stream { white-space: pre-wrap; }
+/* Terminal-style wait state: a lone blinking block cursor (the answer types
+   in like terminal output, so the wait speaks the same language). The same
+   cursor rides the tail of in-flight stream/replay text via ::after. The
+   global prefers-reduced-motion block freezes the blink to a steady cursor. */
+.dashdown-ask-cursor,
+.dashdown-ask-stream::after {
+  display: inline-block;
+  width: 0.55em;
+  height: 1.05em;
+  vertical-align: text-bottom;
+  background: var(--fallback-bc3, oklch(var(--bc3) / 1));
+  animation: dashdown-ask-blink 1.1s steps(2, start) infinite;
+}
+.dashdown-ask-stream::after { content: ""; margin-left: 0.1em; }
+@keyframes dashdown-ask-blink { 50% { opacity: 0; } }
+.dashdown-ask-refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: var(--dashdown-radius-control);
+  color: var(--fallback-bc3, oklch(var(--bc3) / 1));
+  cursor: pointer;
+}
+.dashdown-ask-refresh:hover {
+  color: var(--fallback-bc, oklch(var(--bc) / 1));
+  background: var(--fallback-b2, oklch(var(--b2) / 1));
+}
+/* `display: inline-flex` above would otherwise beat the UA `[hidden]` rule, so
+   the button stays visible (and inert) on static builds where ask.js never
+   reveals it. Honor `hidden` explicitly. */
+.dashdown-ask-refresh[hidden] { display: none; }
+.dashdown-ask-refresh svg { width: 0.875rem; height: 0.875rem; }
+/* AI-provenance badge: a small muted sparkle in the card header (tooltip via
+   title). Quiet by default; hovering turns it warning-amber and reveals the
+   model attribution sitting next to it. */
+.dashdown-ask-badge {
+  display: inline-flex;
+  align-items: center;
+  color: var(--fallback-bc3, oklch(var(--bc3) / 1));
+}
+.dashdown-ask-badge svg { width: 0.875rem; height: 0.875rem; }
+/* The "AI" wordmark: flush against the sparkle (one mark, "✦AI"), so no gap
+   on the badge itself — the label / model attribution carry their own
+   spacing. Inherits the badge color (muted → amber). */
+.dashdown-ask-badge-text {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+.dashdown-ask-badge .dashdown-ask-label,
+.dashdown-ask-badge .dashdown-ask-model { margin-left: 0.4rem; }
+/* Hover anywhere on the ask card: the sparkle turns DaisyUI's per-theme
+   warning color (amber fallback — same hue family as the :::warning callout
+   accent) and the model attribution fades in next to it. Only the sparkle
+   goes yellow — the label and attribution keep their own muted colors. */
+.dashdown-ask:hover .dashdown-ask-badge { color: oklch(var(--wa, 75% 0.16 75) / 1); }
+/* Model attribution: filled by ask.js once an answer arrives (`hidden` until
+   then), but only *visible* while the card is hovered. */
+.dashdown-ask-model {
+  font-size: 0.6875rem;
+  white-space: nowrap;
+  color: var(--fallback-bc3, oklch(var(--bc3) / 1));
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.dashdown-ask-model[hidden] { display: none; }
+.dashdown-ask:hover .dashdown-ask-model { opacity: 1; }
+/* Inline (chrome-less) variant: the answer reads as part of the page prose —
+   no card border/background/padding. The ✦ AI badge stays visible (muted) so
+   generated text is always marked as such; only the ↻ button and the model
+   attribution wait for hover. */
+.dashdown-ask-inline .dashdown-ask-refresh {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.dashdown-ask-inline:hover .dashdown-ask-refresh,
+.dashdown-ask-inline .dashdown-ask-refresh:focus-visible {
+  opacity: 1;
+}
+/* Inline answers are body text, not a card widget: inherit the surrounding
+   page prose's font size, leading, and color instead of the card's compact
+   0.875rem secondary-tone styling, and take on .dashdown-main's paragraph
+   rhythm (1rem margins) rather than the card's tightened 0.5rem. Block
+   spacing comes from that prose rhythm, not the card section margin. */
+.dashdown-ask-inline { margin: 0; }
+.dashdown-ask-inline .dashdown-ask-body {
+  margin-top: 0;
+  font-size: inherit;
+  line-height: inherit;
+  color: inherit;
+}
+.dashdown-ask-inline .dashdown-ask-body p { margin: 1em 0 !important; }
+.dashdown-ask-inline .dashdown-ask-body p:first-child { margin-top: 0 !important; }
+/* em (≈ the old 0.85rem at the default body size): error/notice text scales
+   with a font_size= override like the rest of the answer surface. */
+.dashdown-ask-error {
+  font-size: 0.97em;
+  color: var(--fallback-bc3, oklch(var(--bc3) / 1));
+}
+/* Expected "commentary is off" state (no/broken `llm:` block) — not an error. */
+.dashdown-ask-notice {
+  font-size: 0.97em;
+  font-style: italic;
+  color: var(--fallback-bc3, oklch(var(--bc3) / 1));
+}
+
+/* --- Chart `explain` affordance ----------------------------------------- */
+/* A chart with `explain` hosts a hover-revealed sparkle button in its top-right
+   corner (same reveal pattern as the "filtered by" funnel marker, which shifts
+   left to make room) that toggles an on-demand AI commentary footer under the
+   plot. The footer is a regular ask surface — all the .dashdown-ask-* rules
+   above apply — minus the standalone card chrome: it's part of the chart card,
+   so it drops the section margin and is excluded from the elevation rules. */
+.dashdown-chart { position: relative; } /* corner-anchor for the button */
+.dashdown-explain-btn {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: none;
+  border-radius: var(--dashdown-radius-control, 0.5rem);
+  color: var(--fallback-bc3, oklch(var(--bc3) / 1));
+  background: transparent;
+  cursor: pointer;
+  /* Hidden until the chart is hovered, the button is keyboard-focused, or the
+     footer is open (the toggle must stay visible while its panel shows). */
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+.dashdown-explain-btn svg { width: 0.875rem; height: 0.875rem; }
+[data-async-component]:hover .dashdown-explain-btn,
+.dashdown-explain-btn:focus-visible,
+.dashdown-explain-btn[aria-expanded="true"] {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* Hover/active: the same warning-amber the AI badge speaks. */
+.dashdown-explain-btn:hover,
+.dashdown-explain-btn:focus-visible,
+.dashdown-explain-btn[aria-expanded="true"] {
+  color: oklch(var(--wa, 75% 0.16 75) / 1);
+  outline: none;
+}
+.dashdown-explain-btn:hover,
+.dashdown-explain-btn:focus-visible {
+  background: color-mix(in oklch, oklch(var(--wa, 75% 0.16 75) / 1) 12%, transparent);
+}
+/* Touch devices can't hover-reveal — keep the affordance reachable. */
+@media (hover: none) {
+  .dashdown-explain-btn {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+/* --- Explain annotation ref chips ---------------------------------------- */
+/* <abbr> chips injected server-side (chart_annotations.py::inject_refs) into
+   the explain commentary — one numbered pill per chart mark. Hover/focus
+   bolds the cited mark on the chart (ask.js::wireRefChips); the native
+   title="" tooltip carries the label with zero JS. Same warning-amber the AI
+   affordances speak, via the DaisyUI var so every theme keeps its own tone. */
+.dashdown-anno-ref {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.05em;
+  height: 1.4em;
+  padding: 0 0.35em;
+  margin: 0 0.12em;
+  border-radius: 9999px;
+  font-size: 0.7em;
+  font-weight: 600;
+  line-height: 1;
+  vertical-align: 0.25em;
+  cursor: help;
+  text-decoration: none; /* the abbr dotted underline reads as a typo here */
+  color: oklch(var(--wa, 75% 0.16 75) / 1);
+  background: color-mix(in oklch, oklch(var(--wa, 75% 0.16 75) / 1) 14%, transparent);
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.dashdown-anno-ref:hover,
+.dashdown-anno-ref:focus-visible {
+  background: color-mix(in oklch, oklch(var(--wa, 75% 0.16 75) / 1) 28%, transparent);
+  outline: none;
+}
+/* --- Chart ⛶ fullscreen button ------------------------------------------ */
+/* On every chart, beside the `explain` sparkle, revealed on the same hover
+   trigger. Neutral base-content tone (not the sparkle's AI amber) so the two
+   corner affordances read as distinct. Opens the fullscreen viewer modal (see
+   fullscreen.js): the chart, or its data as a table / pivot. */
+.dashdown-chart-expand-btn {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: none;
+  border-radius: var(--dashdown-radius-control, 0.5rem);
+  color: oklch(var(--bc) / 0.55);
+  background: transparent;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+.dashdown-chart-expand-btn svg { width: 0.875rem; height: 0.875rem; }
+[data-async-component]:hover .dashdown-chart-expand-btn,
+.dashdown-chart-expand-btn:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.dashdown-chart-expand-btn:hover,
+.dashdown-chart-expand-btn:focus-visible {
+  color: oklch(var(--bc) / 1);
+  background: color-mix(in oklch, oklch(var(--bc) / 1) 10%, transparent);
+  outline: none;
+}
+/* Touch devices can't hover-reveal — keep the affordance reachable. */
+@media (hover: none) {
+  .dashdown-chart-expand-btn { opacity: 1; pointer-events: auto; }
+}
+/* Corner order: when `explain` is set, the sparkle keeps the very corner and the
+   expand button tucks to its left. */
+.dashdown-chart:has(.dashdown-explain-btn) .dashdown-chart-expand-btn { right: 2.25rem; }
+
+/* The informational funnel yields the corner to the actionable buttons: it
+   clears the expand button (always present on a chart), plus the sparkle when
+   `explain` is set. */
+.dashdown-chart:has(.dashdown-chart-expand-btn) .dashdown-filter-badge { right: 2.25rem; }
+.dashdown-chart:has(.dashdown-chart-expand-btn):has(.dashdown-explain-btn) .dashdown-filter-badge { right: 4rem; }
+
+/* The SVG geo map cards carry the same ⛶ (emitted by _map_base.py): the filter
+   badge yields the corner there too, and the map header reserves clearance so
+   a metric toggle never sits under the hover-revealed button. With `explain`,
+   the corner order mirrors the charts: sparkle in the corner, ⛶ to its left,
+   badge further along. */
+.dashdown-map:has(.dashdown-chart-expand-btn) .dashdown-filter-badge { right: 2.25rem; }
+.dashdown-map:has(.dashdown-chart-expand-btn) .dashdown-map-header { padding-right: 1.25rem; }
+.dashdown-map:has(.dashdown-explain-btn) .dashdown-chart-expand-btn { right: 2.25rem; }
+.dashdown-map:has(.dashdown-chart-expand-btn):has(.dashdown-explain-btn) .dashdown-filter-badge { right: 4rem; }
+.dashdown-map:has(.dashdown-chart-expand-btn):has(.dashdown-explain-btn) .dashdown-map-header { padding-right: 3rem; }
+
+/* The commentary footer: separated from the plot by a hairline, compact
+   padding (the ask surface's own header/body spacing does the rest). */
+.dashdown-ask.dashdown-explain-panel {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--fallback-b3, oklch(var(--b3) / 1));
+}
+.dashdown-error {
+  background: var(--error-bg);
+  border: 1px solid var(--error-border);
+  color: var(--error-fg);
+  padding: 0.75rem 1rem;
+  border-radius: var(--dashdown-radius-control);
+  margin: 1rem 0;
+}
+.dashdown-error-title { font-weight: 600; margin-bottom: 0.4rem; }
+.dashdown-error-detail {
+  margin: 0; white-space: pre-wrap; font-size: 0.85rem;
+  background: transparent; color: inherit;
+}
+/* <Grid cols=N>: a fixed-column CSS grid for dashboard layouts. */
+.dashdown-grid {
+  display: grid;
+}
+
+/* Grid children: stretch to fill grid cells */
+.dashdown-grid > * {
+  width: auto;
+  min-width: 0;
+}
+
+/* Charts/tables fill their grid cell's width but keep their natural height,
+   top-aligned. A grid defaults to `align-items: stretch`, which pulls a shorter
+   card up to the row's tallest sibling — fine when a card can fill that height,
+   but a chart's plot is a fixed size (default 300px, `height=` overridable) and
+   a chart with `explain` leaves its *card* auto-height (the height moves to an
+   inner region), so next to a tall table the card stretches and pads out with
+   dead space below the plot. `align-self: start` keeps each card its own height
+   instead of matching the tallest sibling. (An explain chart still grows
+   downward when its commentary footer opens — that's content, not stretch.) */
+.dashdown-grid > .dashdown-chart,
+.dashdown-grid > .dashdown-table {
+  width: 100%;
+  align-self: start;
+}
+
+/* <Grid cols=N>: collapse to a single column on narrow viewports so col-span
+   children don't overflow. */
+@media (max-width: 768px) {
+  .dashdown-grid-responsive {
+    grid-template-columns: 1fr !important;
+  }
+  .dashdown-grid-responsive > * {
+    grid-column: span 1 !important;
+  }
+}
+
+/* === Tabs (switchable layout sections) ======================
+   <Tabs><Tab title=…>…</Tab></Tabs> — an underline-style tab bar over
+   server-rendered panels. The bar itself is built client-side (tabs.js) from
+   the panels' data-tab-title markers; before JS runs (or with JS off) the
+   :not(.dashdown-tabs-ready) rule shows the first panel so the page never
+   flashes every panel stacked. Print mode force-shows all panels instead —
+   see the .dashdown-print rules further down. */
+.dashdown-tabs {
+  margin: var(--dashdown-space-section) 0;
+}
+
+.dashdown-tabs-nav {
+  display: flex;
+  align-items: stretch;
+  gap: 0.25rem;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--fallback-b3, oklch(var(--b3) / 1));
+  margin-bottom: 1rem;
+}
+
+.dashdown-tab {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--fallback-bc2, oklch(var(--bc2) / 1));
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1;
+  padding: 0.625rem 0.875rem;
+  /* Sits on the nav's hairline; the active underline replaces it. */
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+
+.dashdown-tab:hover:not(.dashdown-tab-selected) {
+  color: var(--fallback-bc, oklch(var(--bc) / 1));
+}
+
+.dashdown-tab-selected {
+  color: var(--fallback-p, oklch(var(--p) / 1));
+  font-weight: 600;
+  border-bottom-color: var(--fallback-p, oklch(var(--p) / 1));
+}
+
+.dashdown-tab:focus-visible {
+  outline: 2px solid var(--fallback-p, oklch(var(--p) / 1));
+  outline-offset: -2px;
+  border-radius: calc(var(--dashdown-radius-control) - 0.25rem);
+}
+
+/* One panel at a time once tabs.js has taken over; first panel as the pre-JS /
+   no-JS fallback. */
+.dashdown-tabs-panels > .dashdown-tab-panel {
+  display: none;
+}
+.dashdown-tabs-panels > .dashdown-tab-panel.dashdown-tab-active {
+  display: block;
+}
+.dashdown-tabs:not(.dashdown-tabs-ready) > .dashdown-tabs-panels > .dashdown-tab-panel:first-child {
+  display: block;
+}
+
+/* The per-panel title is for print/PDF (where panels stack and the tab bar is
+   hidden); on screen the tab bar already names the visible panel. */
+.dashdown-tab-panel-heading {
+  display: none;
+}
+
+/* Loading overlay - absolute positioned to cover parent */
+.dashdown-loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Surface-tinted (not hard-coded white) so the re-fetch dim works on the
+     dark theme's slate cards too. */
+  background-color: oklch(var(--b1) / 0.8);
+  z-index: 100;
+  border-radius: var(--dashdown-radius-card);
+}
+
+/* On compact KPI cards the shared lg spinner reads oversized — scale it down.
+   (Only loading-lg ships in the Tailwind bundle, so size here, not via class.) */
+.dashdown-counter > .dashdown-loading-overlay .loading {
+  width: 1.5rem;
+}
+
+/* Ensure card-body has relative positioning */
+.card-body {
+  position: relative;
+}
+
+/* --- Card elevation ---------------------------------------------------- */
+/* Every data widget shares `.card bg-base-100 border border-base-300` plus a
+   `.dashdown-*` class. Cards previously sat flat (border only) on one surface,
+   so the eye had nothing to anchor on. Give them a soft resting shadow and a
+   lift on hover. Charts/tables/pivots only deepen the shadow + tint the border
+   (no transform — they host ECharts tooltips / overlays that a transformed
+   ancestor would shift); the small KPI cards add a 1px rise for a tactile feel. */
+/* Inline asks and chart explain footers opt out of the card elevation below:
+   prose has no shadow to raise (and the footer sits *inside* an elevated chart
+   card) — hovering one should reveal only the AI details, not chrome. */
+.dashdown-chart,
+.dashdown-table,
+.dashdown-pivot,
+.dashdown-counter,
+.dashdown-ask:not(.dashdown-ask-inline):not(.dashdown-explain-panel) {
+  box-shadow: var(--dashdown-shadow-card);
+  transition: box-shadow 0.16s ease, border-color 0.16s ease, transform 0.16s ease;
+}
+.dashdown-chart:hover,
+.dashdown-table:hover,
+.dashdown-pivot:hover,
+.dashdown-ask:not(.dashdown-ask-inline):not(.dashdown-explain-panel):hover {
+  box-shadow: var(--dashdown-shadow-raised);
+  border-color: oklch(var(--bc) / 0.16);
+}
+.dashdown-counter:hover {
+  box-shadow: var(--dashdown-shadow-raised);
+  border-color: oklch(var(--bc) / 0.16);
+  transform: translateY(-1px);
+}
+/* Ask provenance glow: while an <Ask> is hovered, the charts/tables bound to
+   the queries it comments on light up in the same warning-amber as the AI
+   badge — subtle border + soft shadow. !important so it beats the elevation
+   rules above regardless of the element's own hover state. */
+.dashdown-ask-highlight {
+  border-color: oklch(var(--wa, 75% 0.16 75) / 0.38) !important;
+  box-shadow:
+    0 0 0 1px oklch(var(--wa, 75% 0.16 75) / 0.2),
+    0 3px 14px oklch(var(--wa, 75% 0.16 75) / 0.1) !important;
+}
+
+/* --- Filter Bar -------------------------------------------------------- */
+/* Hide Alpine-managed nodes (e.g. filter chips) until Alpine initializes. */
+[x-cloak] {
+  display: none !important;
+}
+
+/* A static, content-aligned row below the page header (no band: no sticky
+   positioning, background, border or vertical padding — design backlog
+   #17/#19). Mid-scroll filter visibility is the chips' job. */
+.dashdown-filter-bar {
+  margin-bottom: var(--dashdown-space-section);
+}
+
+/* Top bar: breadcrumbs (left) + the PDF/Embed page actions (right) on one line,
+   just above the page title. Moved out of the app header so the affordances live
+   with the page content; rendered on every page (a page with no breadcrumbs just
+   shows the right-aligned actions). Hidden in print/embed like the rest of the
+   chrome (see those sections). */
+.dashdown-page-topbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: var(--dashdown-space-section);
+}
+/* The topbar owns the bottom margin — drop the breadcrumb's own so the row
+   doesn't carry a double gap. */
+.dashdown-page-topbar .dashdown-breadcrumbs {
+  margin-bottom: 0;
+}
+/* Right-aligned button cluster; `margin-left:auto` floats it to the far right
+   (past the breadcrumbs, or alone when there are none). */
+.dashdown-page-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+/* Filter bar container */
+.dashdown-filter-bar-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+/* --- Filter pills (compact inline controls, design backlog #18) ---------- */
+/* One bordered pill per control: muted inline label prefix + borderless
+   inner control(s). Replaces the stacked label-above-control layout. */
+.dashdown-filter-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  background: var(--fallback-b1, oklch(var(--b1) / 1));
+  border: 1px solid var(--fallback-b3, oklch(var(--b3) / 1));
+  border-radius: var(--dashdown-radius-control);
+  padding: 0 0.25rem 0 0.75rem;
+  min-height: 2.125rem; /* ~34px, per the table mockup */
+  font-size: 0.875rem;
+}
+
+.dashdown-filter-pill-label {
+  color: var(--fallback-bc2, oklch(var(--bc2) / 1));
+  white-space: nowrap;
+}
+
+/* Inner selects/inputs lose their own chrome — the pill carries the border. */
+.dashdown-filter-pill .select,
+.dashdown-filter-pill .input {
+  border: none;
+  background-color: transparent;
+  height: 2rem;
+  min-height: 2rem;
+  font-weight: 500;
+}
+
+.dashdown-filter-pill .select:focus,
+.dashdown-filter-pill .input:focus {
+  outline: none;
+}
+
+/* Keep the pill itself focus-visible for keyboard users. */
+.dashdown-filter-pill:focus-within {
+  outline: 2px solid var(--fallback-p, oklch(var(--p) / 1));
+  outline-offset: 1px;
+}
+
+.dashdown-filter-pill input[type="date"] {
+  font-size: 0.875rem;
+  padding: 0 0.25rem;
+}
+
+/* === Toggle (boolean filter) ================================
+   A one-click switch/checkbox whose string value lives in `filters[name]`.
+   Reuses the filter-pill shell + the already-bundled DaisyUI .toggle/.checkbox
+   (no Tailwind rebuild); only alignment/spacing is ours — the DaisyUI default
+   sizes (toggle 3rem×1.5rem, checkbox 1.5rem) already fit the pill. */
+.dashdown-toggle .dashdown-toggle-input {
+  flex: none;
+  margin-right: 0.25rem;
+  cursor: pointer;
+}
+
+/* === Range slider (numeric range filter) ===================
+   A dual-handle numeric range living in the filter-pill shell. The two handles
+   are two native <input type="range"> overlaid on one rail: each input is
+   transparent and click-through (pointer-events:none) EXCEPT its thumb
+   (pointer-events:auto), so both thumbs stay independently draggable while we
+   paint our own rail + fill underneath. Colours come from the design tokens so
+   the control tracks the light/dark themes. */
+.dashdown-range-slider .dashdown-range-control {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.125rem 0.25rem 0;
+}
+
+.dashdown-range-readout {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--fallback-bc, oklch(var(--bc) / 1));
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.dashdown-range-readout-sep {
+  color: var(--fallback-bc2, oklch(var(--bc2) / 1));
+}
+
+.dashdown-range-track {
+  position: relative;
+  width: 9.5rem;
+  height: 1.125rem;
+  display: flex;
+  align-items: center;
+}
+
+/* The base rail (full width, muted) and the active fill (between the handles,
+   primary-coloured; left/right set inline by fillStyle()). */
+.dashdown-range-track::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0.25rem;
+  border-radius: 999px;
+  background: var(--fallback-b3, oklch(var(--b3) / 1));
+}
+
+.dashdown-range-fill {
+  position: absolute;
+  height: 0.25rem;
+  border-radius: 999px;
+  background: var(--fallback-p, oklch(var(--p) / 1));
+}
+
+.dashdown-range-input {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  margin: 0;
+  height: 1.125rem;
+  background: none;
+  pointer-events: none; /* re-enabled on the thumbs below */
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.dashdown-range-input:focus {
+  outline: none;
+}
+
+/* Transparent native tracks — we draw the rail/fill ourselves. */
+.dashdown-range-input::-webkit-slider-runnable-track {
+  background: transparent;
+  border: none;
+  height: 1.125rem;
+}
+.dashdown-range-input::-moz-range-track {
+  background: transparent;
+  border: none;
+  height: 1.125rem;
+}
+
+/* Thumbs: draggable (pointer-events back on), sized from the design palette. */
+.dashdown-range-input::-webkit-slider-thumb {
+  pointer-events: auto;
+  -webkit-appearance: none;
+  appearance: none;
+  width: 0.875rem;
+  height: 0.875rem;
+  border-radius: 999px;
+  background: var(--fallback-p, oklch(var(--p) / 1));
+  border: 2px solid var(--fallback-b1, oklch(var(--b1) / 1));
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
+  cursor: pointer;
+}
+.dashdown-range-input::-moz-range-thumb {
+  pointer-events: auto;
+  width: 0.875rem;
+  height: 0.875rem;
+  border-radius: 999px;
+  background: var(--fallback-p, oklch(var(--p) / 1));
+  border: 2px solid var(--fallback-b1, oklch(var(--b1) / 1));
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
+  cursor: pointer;
+}
+
+.dashdown-range-input:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--fallback-p, oklch(var(--p) / 1));
+  outline-offset: 2px;
+}
+.dashdown-range-input:focus-visible::-moz-range-thumb {
+  outline: 2px solid var(--fallback-p, oklch(var(--p) / 1));
+  outline-offset: 2px;
+}
+
+/* === Slider (single-value threshold filter) ================
+   The one-handle sibling of the range slider: one native range input over a
+   rail with a fill from the minimum to the handle. Same look/tokens as the
+   range slider; only one thumb, so no overlay/pointer-events trickery. */
+.dashdown-slider .dashdown-slider-control {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.125rem 0.25rem 0;
+}
+
+.dashdown-slider-readout {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--fallback-bc, oklch(var(--bc) / 1));
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.dashdown-slider-track {
+  position: relative;
+  width: 9.5rem;
+  height: 1.125rem;
+  display: flex;
+  align-items: center;
+}
+
+.dashdown-slider-track::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0.25rem;
+  border-radius: 999px;
+  background: var(--fallback-b3, oklch(var(--b3) / 1));
+}
+
+.dashdown-slider-fill {
+  position: absolute;
+  height: 0.25rem;
+  border-radius: 999px;
+  background: var(--fallback-p, oklch(var(--p) / 1));
+}
+
+.dashdown-slider-input {
+  position: relative;
+  width: 100%;
+  margin: 0;
+  height: 1.125rem;
+  background: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.dashdown-slider-input:focus {
+  outline: none;
+}
+
+.dashdown-slider-input::-webkit-slider-runnable-track {
+  background: transparent;
+  border: none;
+  height: 1.125rem;
+}
+.dashdown-slider-input::-moz-range-track {
+  background: transparent;
+  border: none;
+  height: 1.125rem;
+}
+
+.dashdown-slider-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 0.875rem;
+  height: 0.875rem;
+  border-radius: 999px;
+  background: var(--fallback-p, oklch(var(--p) / 1));
+  border: 2px solid var(--fallback-b1, oklch(var(--b1) / 1));
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
+  cursor: pointer;
+}
+.dashdown-slider-input::-moz-range-thumb {
+  width: 0.875rem;
+  height: 0.875rem;
+  border-radius: 999px;
+  background: var(--fallback-p, oklch(var(--p) / 1));
+  border: 2px solid var(--fallback-b1, oklch(var(--b1) / 1));
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
+  cursor: pointer;
+}
+
+.dashdown-slider-input:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--fallback-p, oklch(var(--p) / 1));
+  outline-offset: 2px;
+}
+.dashdown-slider-input:focus-visible::-moz-range-thumb {
+  outline: 2px solid var(--fallback-p, oklch(var(--p) / 1));
+  outline-offset: 2px;
+}
+
+/* === Button group (segmented single-select filter) =========
+   A row of pill buttons where exactly one is active — an iOS-style segmented
+   control living in the filter-pill shell. The active segment lifts onto a
+   raised base-100 surface; the rest are quiet. Colours/radii come from the
+   design tokens so it tracks the light/dark themes. */
+.dashdown-button-group .dashdown-segments {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 0.125rem;
+  padding: 0.1875rem;
+  background: var(--fallback-b2, oklch(var(--b2) / 1));
+  border-radius: var(--dashdown-radius-control);
+}
+
+.dashdown-segment {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--fallback-bc2, oklch(var(--bc2) / 1));
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1;
+  padding: 0.3125rem 0.625rem;
+  border-radius: calc(var(--dashdown-radius-control) - 0.1875rem);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.dashdown-segment:hover:not(.dashdown-segment-active) {
+  color: var(--fallback-bc, oklch(var(--bc) / 1));
+  background: var(--fallback-b1, oklch(var(--b1) / 0.6));
+}
+
+.dashdown-segment-active {
+  background: var(--fallback-b1, oklch(var(--b1) / 1));
+  color: var(--fallback-p, oklch(var(--p) / 1));
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+}
+
+.dashdown-segment:focus-visible {
+  outline: 2px solid var(--fallback-p, oklch(var(--p) / 1));
+  outline-offset: 1px;
+}
+
+/* === Combobox (searchable high-cardinality single-select) ===
+   A text input that searches options server-side (DISTINCT…ILIKE…LIMIT) and
+   shows matches in a floating panel. Lives in the filter-pill shell; the panel
+   is absolutely positioned so it overlays page content. */
+.dashdown-combobox-control {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.dashdown-combobox-input {
+  width: 11rem;
+  max-width: 100%;
+}
+
+.dashdown-combobox-clear {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--fallback-bc2, oklch(var(--bc2) / 1));
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0 0.25rem;
+  cursor: pointer;
+  border-radius: 999px;
+}
+
+.dashdown-combobox-clear:hover {
+  color: var(--fallback-bc, oklch(var(--bc) / 1));
+}
+
+.dashdown-combobox-panel {
+  position: absolute;
+  top: calc(100% + 0.375rem);
+  left: 0;
+  min-width: 12rem;
+  max-width: 20rem;
+  max-height: 16rem;
+  overflow-y: auto;
+  z-index: 50;
+  background: var(--fallback-b1, oklch(var(--b1) / 1));
+  border: 1px solid var(--fallback-b3, oklch(var(--b3) / 1));
+  border-radius: var(--dashdown-radius-control);
+  box-shadow: var(--dashdown-shadow-raised, 0 4px 12px rgb(0 0 0 / 0.12));
+  padding: 0.25rem;
+}
+
+.dashdown-combobox-option {
+  padding: 0.375rem 0.625rem;
+  border-radius: calc(var(--dashdown-radius-control) - 0.1875rem);
+  font-size: 0.875rem;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dashdown-combobox-option:hover,
+.dashdown-combobox-option.is-active {
+  background: var(--fallback-b2, oklch(var(--b2) / 1));
+}
+
+.dashdown-combobox-option.is-selected {
+  color: var(--fallback-p, oklch(var(--p) / 1));
+  font-weight: 600;
+}
+
+.dashdown-combobox-empty {
+  padding: 0.5rem 0.625rem;
+  font-size: 0.8125rem;
+  color: var(--fallback-bc2, oklch(var(--bc2) / 1));
+}
+
+/* Multi-select: removable chips sit inline before the search input, which
+   shrinks to share the row. */
+.dashdown-combobox-control.dashdown-combobox-multi {
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  max-width: 22rem;
+}
+
+.dashdown-combobox-multi .dashdown-combobox-input {
+  width: auto;
+  flex: 1 1 5rem;
+  min-width: 5rem;
+}
+
+.dashdown-combobox-chips {
+  display: contents; /* chips flow directly in the wrapping control row */
+}
+
+.dashdown-combobox-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.25rem 0.125rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  background: var(--fallback-b2, oklch(var(--b2) / 1));
+  color: var(--fallback-bc, oklch(var(--bc) / 1));
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.dashdown-combobox-chip-x {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--fallback-bc2, oklch(var(--bc2) / 1));
+  font-size: 0.9rem;
+  line-height: 1;
+  padding: 0 0.0625rem;
+  cursor: pointer;
+  border-radius: 999px;
+}
+
+.dashdown-combobox-chip-x:hover {
+  color: var(--fallback-bc, oklch(var(--bc) / 1));
+}
+
+/* The per-option checkmark gutter in multi mode. */
+.dashdown-combobox-option.is-multi {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.dashdown-combobox-check {
+  display: inline-block;
+  width: 0.875rem;
+  flex: none;
+  color: var(--fallback-p, oklch(var(--p) / 1));
+  font-weight: 700;
+}
+
+/* === Site search ===========================================
+   Full-text search over every page. A pill-shaped input with a floating
+   results panel; ranking happens client-side in site_search.js. */
+.dashdown-site-search {
+  position: relative;
+  max-width: 30rem;
+  margin: 0 0 1.5rem;
+}
+
+.dashdown-site-search-box {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--fallback-b1, oklch(var(--b1) / 1));
+  border: 1px solid var(--fallback-b3, oklch(var(--b3) / 1));
+  border-radius: var(--dashdown-radius-control);
+  padding: 0 0.625rem;
+  min-height: 2.5rem;
+}
+
+.dashdown-site-search-box:focus-within {
+  outline: 2px solid var(--fallback-p, oklch(var(--p) / 1));
+  outline-offset: 1px;
+}
+
+.dashdown-site-search-icon {
+  width: 1.1rem;
+  height: 1.1rem;
+  flex: none;
+  color: var(--fallback-bc3, oklch(var(--bc3) / 1));
+}
+
+.dashdown-site-search-input.input {
+  flex: 1 1 auto;
+  border: none;
+  background: transparent;
+  height: 2.375rem;
+  min-height: 2.375rem;
+  padding: 0;
+  font-size: 0.9375rem;
+}
+
+.dashdown-site-search-input.input:focus {
+  outline: none;
+}
+
+.dashdown-site-search-hint {
+  flex: none;
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 0.15rem 0.4rem;
+  border: 1px solid var(--fallback-b3, oklch(var(--b3) / 1));
+  border-radius: 0.3rem;
+  color: var(--fallback-bc3, oklch(var(--bc3) / 1));
+  background: var(--fallback-b2, oklch(var(--b2) / 1));
+}
+
+.dashdown-site-search-results {
+  position: absolute;
+  top: calc(100% + 0.375rem);
+  left: 0;
+  right: 0;
+  z-index: 40;
+  max-height: 26rem;
+  overflow-y: auto;
+  background: var(--fallback-b1, oklch(var(--b1) / 1));
+  border: 1px solid var(--fallback-b3, oklch(var(--b3) / 1));
+  border-radius: var(--dashdown-radius-card);
+  box-shadow: var(--dashdown-shadow-raised, 0 8px 24px rgb(0 0 0 / 0.14));
+  padding: 0.375rem;
+}
+
+.dashdown-site-search-result {
+  display: block;
+  padding: 0.5rem 0.625rem;
+  border-radius: var(--dashdown-radius-control);
+  text-decoration: none;
+  color: inherit;
+}
+
+.dashdown-site-search-result:hover,
+.dashdown-site-search-result[aria-selected="true"] {
+  background: var(--fallback-b2, oklch(var(--b2) / 1));
+}
+
+.dashdown-site-search-title {
+  display: block;
+  font-weight: 600;
+  font-size: 0.9375rem;
+}
+
+.dashdown-site-search-crumb {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--fallback-bc3, oklch(var(--bc3) / 1));
+  margin-top: 0.05rem;
+}
+
+.dashdown-site-search-snippet {
+  display: block;
+  font-size: 0.8125rem;
+  color: var(--fallback-bc2, oklch(var(--bc2) / 1));
+  margin-top: 0.25rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashdown-site-search-snippet mark,
+.dashdown-site-search-title mark {
+  background: transparent;
+  color: var(--fallback-p, oklch(var(--p) / 1));
+  font-weight: 700;
+  padding: 0;
+}
+
+.dashdown-site-search-empty {
+  padding: 0.75rem 0.625rem;
+  font-size: 0.875rem;
+  color: var(--fallback-bc3, oklch(var(--bc3) / 1));
+}
+
+/* Interactive search chrome is noise in a printed/exported page. */
+.dashdown-print .dashdown-site-search {
+  display: none;
+}
+
+/* Multi-select: a dropdown button (the trigger) + a checkmark popover panel.
+   The button shows the picked values joined by ", " (or the "All" placeholder),
+   truncated with an ellipsis; the panel floats below, each row toggling a value
+   with a checkmark. Stays a single ~34px pill like the single-select. */
+.dashdown-multiselect-control {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+}
+
+.dashdown-multiselect-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: 14rem;
+  padding: 0 0.25rem;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--fallback-bc, oklch(var(--bc) / 1));
+}
+
+.dashdown-multiselect-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashdown-multiselect-summary.is-placeholder {
+  color: var(--fallback-bc2, oklch(var(--bc2) / 1));
+  font-weight: 400;
+}
+
+.dashdown-multiselect-chevron {
+  width: 0.875rem;
+  height: 0.875rem;
+  flex: none;
+  color: var(--fallback-bc3, oklch(var(--bc3) / 1));
+  transition: transform 0.15s ease;
+}
+
+.dashdown-multiselect.is-open .dashdown-multiselect-chevron {
+  transform: rotate(180deg);
+}
+
+.dashdown-multiselect-panel {
+  position: absolute;
+  top: calc(100% + 0.375rem);
+  left: 0;
+  z-index: 50;
+  min-width: 100%;
+  max-width: 18rem;
+  max-height: 16rem;
+  overflow-y: auto;
+  padding: 0.25rem;
+  background: var(--fallback-b1, oklch(var(--b1) / 1));
+  border: 1px solid var(--fallback-b3, oklch(var(--b3) / 1));
+  border-radius: var(--dashdown-radius-control);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.18);
+}
+
+.dashdown-multiselect-panel[hidden] {
+  display: none;
+}
+
+.dashdown-multiselect-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.375rem 0.5rem;
+  border-radius: calc(var(--dashdown-radius-control) - 0.125rem);
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--fallback-bc, oklch(var(--bc) / 1));
+}
+
+.dashdown-multiselect-option:hover {
+  background: var(--fallback-b2, oklch(var(--b2) / 1));
+}
+
+.dashdown-multiselect-option.is-selected {
+  background: oklch(var(--p) / 0.12);
+  color: var(--fallback-p, oklch(var(--p) / 1));
+}
+
+.dashdown-multiselect-check {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+  opacity: 0;
+}
+
+.dashdown-multiselect-option.is-selected .dashdown-multiselect-check {
+  opacity: 1;
+}
+
+/* Search pill: icon prefix instead of a text label. */
+.dashdown-filter-pill-icon {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+  color: var(--fallback-bc3, oklch(var(--bc3) / 1));
+}
+
+.dashdown-search.dashdown-filter-pill .input {
+  width: 13rem; /* ~w-52, near the mockup's w-56 search field */
+  padding: 0 0.25rem;
+}
+
+/* Inline ✕ that clears the search value (replaces the old block-level
+   "Clear" button under the stacked input). */
+.dashdown-filter-pill-clear {
+  flex: none;
+  padding: 0 0.5rem;
+  align-self: stretch;
+  color: var(--fallback-bc3, oklch(var(--bc3) / 1));
+}
+
+.dashdown-filter-pill-clear:hover {
+  color: var(--fallback-bc, oklch(var(--bc) / 1));
+}
+
+/* DateRange custom mode: start/end inputs revealed inside the pill when the
+   "Custom" preset is active. */
+.dashdown-daterange-custom {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* --- Filter drawer (design backlog #21) ---------------------------------- */
+/* Off-canvas surface for overflow (4+ controls), narrow viewports, and
+   `filters: drawer` pages. The trigger button is pill-styled to sit with
+   the inline controls; filter_bar.js unhides it when the drawer has any. */
+.dashdown-filter-drawer-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  background: var(--fallback-b1, oklch(var(--b1) / 1));
+  border: 1px solid var(--fallback-b3, oklch(var(--b3) / 1));
+  border-radius: var(--dashdown-radius-control);
+  padding: 0 0.75rem;
+  min-height: 2.125rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.dashdown-filter-drawer-btn:hover {
+  border-color: var(--fallback-bc3, oklch(var(--bc3) / 1));
+}
+
+/* Active-filter count badge inside the button. */
+.dashdown-filter-drawer-count {
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.25rem;
+  border-radius: 9999px;
+  background: var(--fallback-p, oklch(var(--p) / 1));
+  color: var(--fallback-pc, oklch(var(--pc) / 1));
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+  text-align: center;
+}
+
+.dashdown-filter-drawer {
+  position: fixed;
+  inset: 0;
+  z-index: 120; /* above the sticky header (100) and mobile sidebar (99/100) */
+}
+
+.dashdown-filter-drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.4); /* slate-900 scrim, both modes */
+}
+
+.dashdown-filter-drawer-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 20rem;
+  max-width: 85vw;
+  display: flex;
+  flex-direction: column;
+  background: var(--fallback-b1, oklch(var(--b1) / 1));
+  border-left: 1px solid var(--fallback-b3, oklch(var(--b3) / 1));
+  animation: dashdown-drawer-in 0.2s ease;
+}
+
+@keyframes dashdown-drawer-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.dashdown-filter-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--fallback-b3, oklch(var(--b3) / 1));
+  font-weight: 600;
+}
+
+.dashdown-filter-drawer-close {
+  padding: 0.25rem 0.5rem;
+  color: var(--fallback-bc3, oklch(var(--bc3) / 1));
+}
+
+.dashdown-filter-drawer-close:hover {
+  color: var(--fallback-bc, oklch(var(--bc) / 1));
+}
+
+.dashdown-filter-drawer-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.25rem;
+  overflow-y: auto;
+}
+
+/* Inside the drawer, the compact pill unfolds into a stacked field: muted
+   label above a full-width bordered control (the drawer has the room — the
+   inline-pill treatment is for the row only). */
+.dashdown-filter-drawer-body .dashdown-filter-pill {
+  flex-direction: column;
+  align-items: stretch;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  min-height: 0;
+}
+
+.dashdown-filter-drawer-body .dashdown-filter-pill-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+/* The label's ":" separator only makes sense as an inline prefix. */
+.dashdown-filter-drawer-body .dashdown-filter-pill-colon {
+  display: none;
+}
+
+.dashdown-filter-drawer-body .dashdown-filter-pill .select,
+.dashdown-filter-drawer-body .dashdown-filter-pill .input {
+  width: 100%;
+  height: 2.25rem;
+  min-height: 2.25rem;
+  padding: 0 0.625rem;
+  border: 1px solid var(--fallback-b3, oklch(var(--b3) / 1));
+  background: var(--fallback-b1, oklch(var(--b1) / 1));
+  border-radius: var(--dashdown-radius-control);
+}
+
+.dashdown-filter-drawer-body .dashdown-filter-pill .select:focus,
+.dashdown-filter-drawer-body .dashdown-filter-pill .input:focus {
+  outline: 2px solid var(--fallback-p, oklch(var(--p) / 1));
+  outline-offset: 1px;
+}
+
+.dashdown-filter-drawer-body .dashdown-filter-pill:focus-within {
+  outline: none; /* the focused inner control carries the outline here */
+}
+
+/* Search keeps its icon+input row shape — it has no text label to stack —
+   just stretched full-width with the border back on the wrapper. */
+.dashdown-filter-drawer-body .dashdown-search.dashdown-filter-pill {
+  flex-direction: row;
+  align-items: center;
+  border: 1px solid var(--fallback-b3, oklch(var(--b3) / 1));
+  border-radius: var(--dashdown-radius-control);
+  padding: 0 0.25rem 0 0.75rem;
+  min-height: 2.25rem;
+}
+
+.dashdown-filter-drawer-body .dashdown-search.dashdown-filter-pill .input {
+  width: 100%;
+  border: none;
+  padding: 0 0.25rem;
+}
+
+.dashdown-filter-drawer-body .dashdown-search.dashdown-filter-pill .input:focus {
+  outline: none;
+}
+
+.dashdown-filter-drawer-body .dashdown-search.dashdown-filter-pill:focus-within {
+  outline: 2px solid var(--fallback-p, oklch(var(--p) / 1));
+  outline-offset: 1px;
+}
+
+/* DateRange custom inputs share the row's width inside the drawer. */
+.dashdown-filter-drawer-body .dashdown-daterange-custom {
+  width: 100%;
+}
+
+.dashdown-filter-drawer-body .dashdown-daterange-custom .input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Multi-select inside the drawer. The inline pill floats its panel with
+   `position: absolute`, but the drawer body is `overflow-y: auto`, which would
+   clip the floating panel. So in the drawer the trigger becomes a full-width
+   bordered field (like the other drawer controls) and the panel drops back
+   into normal flow (`position: static`) — it expands the drawer and pushes the
+   controls below it down, scrolling with the drawer instead of being clipped. */
+.dashdown-filter-drawer-body .dashdown-multiselect-control {
+  /* Column, so the now-in-flow panel sits BELOW the trigger instead of
+     becoming a second flex item beside it (which would squeeze the trigger). */
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.dashdown-filter-drawer-body .dashdown-multiselect-trigger {
+  width: 100%;
+  max-width: none;
+  justify-content: space-between;
+  height: 2.25rem;
+  padding: 0 0.625rem;
+  border: 1px solid var(--fallback-b3, oklch(var(--b3) / 1));
+  background: var(--fallback-b1, oklch(var(--b1) / 1));
+  border-radius: var(--dashdown-radius-control);
+}
+
+.dashdown-filter-drawer-body .dashdown-multiselect.is-open .dashdown-multiselect-trigger {
+  outline: 2px solid var(--fallback-p, oklch(var(--p) / 1));
+  outline-offset: 1px;
+}
+
+.dashdown-filter-drawer-body .dashdown-multiselect-panel {
+  position: static;
+  width: 100%;
+  max-width: none;
+  margin-top: 0.375rem;
+  box-shadow: none;
+}
+
+/* --- Error States ------------------------------------------------------- */
+.dashdown-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1rem;
+  background: var(--fallback-er, oklch(var(--er) / 1));
+  border: 1px solid var(--fallback-er, oklch(var(--er) / 1));
+  border-radius: var(--dashdown-radius-control);
+  color: var(--fallback-ec, oklch(var(--ec) / 1));
+  margin: 1rem 0;
+}
+
+.dashdown-error-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.dashdown-error-title {
+  font-weight: 600;
+  margin-bottom: 0.4rem;
+  color: var(--fallback-ec, oklch(var(--ec) / 1));
+}
+
+.dashdown-error-message {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--fallback-ec2, oklch(var(--ec2) / 1));
+}
+
+.dashdown-error-retry {
+  margin-top: 0.75rem;
+}
+
+/* Error state for components */
+.dashdown-chart.error,
+.dashdown-table.error,
+.dashdown-counter.error {
+  background: var(--fallback-er, oklch(var(--er) / 1));
+  border-color: var(--fallback-er, oklch(var(--er) / 1));
+}
+
+/* --- Mobile-Responsive Sidebar (Task 4.1) --------------------------------- */
+@media (max-width: 767px) {
+  .dashdown-layout {
+    position: relative;
+  }
+  
+  .dashdown-sidebar {
+    position: fixed;
+    left: -260px;
+    width: 260px;
+    height: 100vh;
+    top: 0;
+    transition: transform 0.3s ease;
+    z-index: 100;
+    border-right: none;
+  }
+  
+  .dashdown-sidebar.open {
+    transform: translateX(260px);
+  }
+  
+  .dashdown-main {
+    margin-left: 0;
+    width: 100%;
+  }
+  
+  /* Sidebar overlay */
+  .dashdown-sidebar-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 99;
+  }
+  
+  .dashdown-sidebar.open ~ .dashdown-sidebar-overlay {
+    display: block;
+  }
+}
+
+/* Mobile hamburger menu */
+.dashdown-mobile-menu-btn {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  /* inline-flex (not block), so the DaisyUI .btn centering keeps the
+     hamburger icon in the middle of the square button. */
+  .dashdown-mobile-menu-btn {
+    display: inline-flex;
+  }
+}
+
+/* Theme-switch colour crossfade. Previously a permanent universal transition on
+   `*`, which also fed every hover/focus colour change through a 300ms fade — so
+   ordinary interactions read as slightly laggy. Instead, scope the crossfade to
+   a transient class the theme switcher toggles on <html> for ~360ms (see
+   page.html's __dashdownThemeFlash). Light/dark now glides; interactive states
+   keep their own short transitions and feel snappy. The reduced-motion guard
+   below short-circuits both this and the JS that adds the class. */
+html.dashdown-theme-anim,
+html.dashdown-theme-anim *,
+html.dashdown-theme-anim *::before,
+html.dashdown-theme-anim *::after {
+  transition: background-color 0.3s ease, color 0.3s ease,
+    border-color 0.3s ease, fill 0.3s ease !important;
+}
+
+/* --- Reduced motion ----------------------------------------------------- */
+/* Honor the OS "reduce motion" setting: neutralize the framework's animations
+   (page view-transitions, the filter-drawer slide-in, the card hover lift, the
+   KPI count-up, the theme crossfade). One blanket near-instant override plus the
+   handful of named animations that need an explicit `none`. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none !important;
+  }
+  .dashdown-filter-drawer-panel {
+    animation: none !important;
+  }
+  .dashdown-counter:hover {
+    transform: none !important;
+  }
+}
+
+/* --- Surface polish ----------------------------------------------------- */
+/* Crisper text rendering for the Inter face (geometric digits + disambiguated
+   letterforms via Inter's character variants — adjustable from custom.css). */
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "cv05" 1, "cv11" 1, "ss01" 1;
+}
+
+/* Brand-tinted text selection in place of the OS default blue. */
+::selection {
+  background: oklch(var(--p) / 0.22);
+}
+
+/* Thin, theme-tinted scrollbars for the app's in-page scroll regions (Firefox
+   `scrollbar-*` + WebKit `::-webkit-scrollbar`). Kept off the document root so
+   the page's own scrollbar stays the familiar OS one; applied to the sidebar,
+   overflow panels, and scroll boxes where a chunky default bar reads as heavy. */
+.dashdown-sidebar,
+.dashdown-table-scroll,
+.dashdown-code,
+.dashdown-filter-drawer-body,
+.dashdown-combobox-panel,
+.dashdown-multiselect-panel,
+.dashdown-site-search-results {
+  scrollbar-width: thin;
+  scrollbar-color: oklch(var(--bc) / 0.25) transparent;
+}
+.dashdown-sidebar::-webkit-scrollbar,
+.dashdown-table-scroll::-webkit-scrollbar,
+.dashdown-code::-webkit-scrollbar,
+.dashdown-filter-drawer-body::-webkit-scrollbar,
+.dashdown-combobox-panel::-webkit-scrollbar,
+.dashdown-multiselect-panel::-webkit-scrollbar,
+.dashdown-site-search-results::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+.dashdown-sidebar::-webkit-scrollbar-thumb,
+.dashdown-table-scroll::-webkit-scrollbar-thumb,
+.dashdown-code::-webkit-scrollbar-thumb,
+.dashdown-filter-drawer-body::-webkit-scrollbar-thumb,
+.dashdown-combobox-panel::-webkit-scrollbar-thumb,
+.dashdown-multiselect-panel::-webkit-scrollbar-thumb,
+.dashdown-site-search-results::-webkit-scrollbar-thumb {
+  background: oklch(var(--bc) / 0.22);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.dashdown-sidebar::-webkit-scrollbar-thumb:hover,
+.dashdown-table-scroll::-webkit-scrollbar-thumb:hover,
+.dashdown-code::-webkit-scrollbar-thumb:hover,
+.dashdown-filter-drawer-body::-webkit-scrollbar-thumb:hover,
+.dashdown-combobox-panel::-webkit-scrollbar-thumb:hover,
+.dashdown-multiselect-panel::-webkit-scrollbar-thumb:hover,
+.dashdown-site-search-results::-webkit-scrollbar-thumb:hover {
+  background: oklch(var(--bc) / 0.38);
+}
+.dashdown-sidebar::-webkit-scrollbar-track,
+.dashdown-table-scroll::-webkit-scrollbar-track,
+.dashdown-code::-webkit-scrollbar-track,
+.dashdown-filter-drawer-body::-webkit-scrollbar-track,
+.dashdown-combobox-panel::-webkit-scrollbar-track,
+.dashdown-multiselect-panel::-webkit-scrollbar-track,
+.dashdown-site-search-results::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* --- Empty States (Task 3.5) ------------------------------------------------ */
+.dashdown-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  text-align: center;
+  color: var(--fallback-bc2, oklch(var(--bc2) / 1));
+}
+
+.dashdown-empty-icon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+  opacity: 0.7;
+}
+
+.dashdown-empty h3,
+.dashdown-empty h4 {
+  margin: 0 0 0.5rem 0;
+  color: var(--fallback-bc, oklch(var(--bc) / 1));
+}
+
+.dashdown-empty p {
+  margin: 0 0 1.5rem 0;
+  color: var(--fallback-bc2, oklch(var(--bc2) / 1));
+}
+
+/* Empty table state */
+.dashdown-empty-table {
+  padding: 3rem 1rem;
+}
+
+/* Empty page state */
+.dashdown-empty-page {
+  padding: 6rem 2rem;
+}
+
+.dashdown-empty-page h3 {
+  font-size: 1.5rem;
+}
+
+.dashdown-empty-page p {
+  font-size: 1.125rem;
+}
+
+/* ===========================================================================
+   Markdown prose
+   Styling for the rich-markdown features rendered by render/markdown.py:
+   syntax-highlighted code blocks, inline code, :::note/:::warning callouts,
+   task lists, footnotes, definition lists and heading anchors. Scoped to
+   `.dashdown-prose` (the body_html wrapper in page.html) so it can't clobber
+   component-rendered markup. Colors lean on the same --bc/--b* theme tokens as
+   the rest of this file; the syntax palette below is a curated GitHub-style set
+   so code reads well on the slate surface in both themes.
+   =========================================================================== */
+
+/* Fenced code blocks (highlight_code emits <pre class="dashdown-code">). */
+.dashdown-code {
+  margin: var(--dashdown-space-section) 0;
+  padding: 1rem 1.15rem;
+  border-radius: var(--dashdown-radius-control);
+  background: oklch(var(--bc) / 0.04);
+  border: 1px solid oklch(var(--bc) / 0.1);
+  overflow-x: auto;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  -webkit-overflow-scrolling: touch;
+}
+.dashdown-code code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+  background: none;
+  padding: 0;
+  border: 0;
+  color: var(--fallback-bc, oklch(var(--bc) / 1));
+  white-space: pre;
+}
+
+/* Copy-to-clipboard button injected by static/components/copy_code.js. The
+   wrapper is a non-scrolling relative container so the button stays pinned
+   top-right while the code scrolls horizontally (the <pre> is overflow-x:auto).
+   The wrapper takes over the block's vertical rhythm; the <pre> resets its own
+   margin so spacing isn't doubled. */
+.dashdown-code-wrap {
+  position: relative;
+  margin: var(--dashdown-space-section) 0;
+}
+.dashdown-code-wrap > .dashdown-code {
+  margin: 0;
+}
+.dashdown-code-copy {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.3rem;
+  border-radius: var(--dashdown-radius-control);
+  border: 1px solid oklch(var(--bc) / 0.12);
+  background: oklch(var(--b1) / 0.85);
+  color: oklch(var(--bc) / 0.6);
+  cursor: pointer;
+  line-height: 0;
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease,
+    border-color 0.15s ease;
+}
+.dashdown-code-copy:hover {
+  color: oklch(var(--bc) / 0.9);
+  background: var(--fallback-b1, oklch(var(--b1) / 1));
+  border-color: oklch(var(--bc) / 0.22);
+}
+.dashdown-code-copy:focus-visible {
+  outline: 2px solid oklch(var(--p) / 0.5);
+  outline-offset: 2px;
+  opacity: 1;
+}
+.dashdown-code-copy.dashdown-copied,
+.dashdown-code-copy.dashdown-copied:hover {
+  color: oklch(var(--su) / 1);
+  border-color: oklch(var(--su) / 0.4);
+}
+/* Off-screen scratch field for the execCommand clipboard fallback. */
+.dashdown-code-copy-scratch {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+  left: -9999px;
+}
+/* Reveal on hover only where hovering is possible; touch devices (no hover)
+   keep the button always visible since there's nothing to hover. */
+@media (hover: hover) {
+  .dashdown-code-copy {
+    opacity: 0;
+  }
+  .dashdown-code-wrap:hover .dashdown-code-copy {
+    opacity: 1;
+  }
+}
+
+/* Inline code (`like this`) — only the inline kind, not the <code> inside a
+   highlighted block. */
+.dashdown-prose :not(pre) > code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+    "Liberation Mono", monospace;
+  font-size: 0.875em;
+  padding: 0.15em 0.4em;
+  border-radius: 0.3rem;
+  background: oklch(var(--bc) / 0.07);
+  color: var(--fallback-bc, oklch(var(--bc) / 1));
+}
+
+/* --- Syntax highlighting palette (Pygments short token classes) ----------- */
+[data-theme="light"] .dashdown-code .c,
+[data-theme="light"] .dashdown-code .ch,
+[data-theme="light"] .dashdown-code .cm,
+[data-theme="light"] .dashdown-code .c1,
+[data-theme="light"] .dashdown-code .cs { color: #6e7781; font-style: italic; }
+[data-theme="light"] .dashdown-code .cp,
+[data-theme="light"] .dashdown-code .cpf { color: #6e7781; }
+[data-theme="light"] .dashdown-code .k,
+[data-theme="light"] .dashdown-code .kc,
+[data-theme="light"] .dashdown-code .kd,
+[data-theme="light"] .dashdown-code .kn,
+[data-theme="light"] .dashdown-code .kp,
+[data-theme="light"] .dashdown-code .kr,
+[data-theme="light"] .dashdown-code .ow { color: #cf222e; }
+[data-theme="light"] .dashdown-code .kt { color: #953800; }
+[data-theme="light"] .dashdown-code .nf,
+[data-theme="light"] .dashdown-code .fm,
+[data-theme="light"] .dashdown-code .nd { color: #8250df; }
+[data-theme="light"] .dashdown-code .nc,
+[data-theme="light"] .dashdown-code .nn { color: #953800; }
+[data-theme="light"] .dashdown-code .nb,
+[data-theme="light"] .dashdown-code .bp,
+[data-theme="light"] .dashdown-code .no,
+[data-theme="light"] .dashdown-code .nv,
+[data-theme="light"] .dashdown-code .na,
+[data-theme="light"] .dashdown-code .m,
+[data-theme="light"] .dashdown-code .mi,
+[data-theme="light"] .dashdown-code .mf,
+[data-theme="light"] .dashdown-code .mh,
+[data-theme="light"] .dashdown-code .mo,
+[data-theme="light"] .dashdown-code .il { color: #0550ae; }
+[data-theme="light"] .dashdown-code .s,
+[data-theme="light"] .dashdown-code .sa,
+[data-theme="light"] .dashdown-code .sb,
+[data-theme="light"] .dashdown-code .sc,
+[data-theme="light"] .dashdown-code .dl,
+[data-theme="light"] .dashdown-code .sd,
+[data-theme="light"] .dashdown-code .s1,
+[data-theme="light"] .dashdown-code .s2,
+[data-theme="light"] .dashdown-code .se,
+[data-theme="light"] .dashdown-code .si,
+[data-theme="light"] .dashdown-code .sr,
+[data-theme="light"] .dashdown-code .ss { color: #0a3069; }
+[data-theme="light"] .dashdown-code .nt { color: #116329; }
+[data-theme="light"] .dashdown-code .err { color: #cf222e; }
+[data-theme="light"] .dashdown-code .gi { color: #116329; background: #dafbe1; }
+[data-theme="light"] .dashdown-code .gd { color: #82071e; background: #ffebe9; }
+
+[data-theme="dark"] .dashdown-code .c,
+[data-theme="dark"] .dashdown-code .ch,
+[data-theme="dark"] .dashdown-code .cm,
+[data-theme="dark"] .dashdown-code .c1,
+[data-theme="dark"] .dashdown-code .cs { color: #8b949e; font-style: italic; }
+[data-theme="dark"] .dashdown-code .cp,
+[data-theme="dark"] .dashdown-code .cpf { color: #8b949e; }
+[data-theme="dark"] .dashdown-code .k,
+[data-theme="dark"] .dashdown-code .kc,
+[data-theme="dark"] .dashdown-code .kd,
+[data-theme="dark"] .dashdown-code .kn,
+[data-theme="dark"] .dashdown-code .kp,
+[data-theme="dark"] .dashdown-code .kr,
+[data-theme="dark"] .dashdown-code .ow { color: #ff7b72; }
+[data-theme="dark"] .dashdown-code .kt { color: #ffa657; }
+[data-theme="dark"] .dashdown-code .nf,
+[data-theme="dark"] .dashdown-code .fm,
+[data-theme="dark"] .dashdown-code .nd { color: #d2a8ff; }
+[data-theme="dark"] .dashdown-code .nc,
+[data-theme="dark"] .dashdown-code .nn { color: #ffa657; }
+[data-theme="dark"] .dashdown-code .nb,
+[data-theme="dark"] .dashdown-code .bp,
+[data-theme="dark"] .dashdown-code .no,
+[data-theme="dark"] .dashdown-code .nv,
+[data-theme="dark"] .dashdown-code .na,
+[data-theme="dark"] .dashdown-code .m,
+[data-theme="dark"] .dashdown-code .mi,
+[data-theme="dark"] .dashdown-code .mf,
+[data-theme="dark"] .dashdown-code .mh,
+[data-theme="dark"] .dashdown-code .mo,
+[data-theme="dark"] .dashdown-code .il { color: #79c0ff; }
+[data-theme="dark"] .dashdown-code .s,
+[data-theme="dark"] .dashdown-code .sa,
+[data-theme="dark"] .dashdown-code .sb,
+[data-theme="dark"] .dashdown-code .sc,
+[data-theme="dark"] .dashdown-code .dl,
+[data-theme="dark"] .dashdown-code .sd,
+[data-theme="dark"] .dashdown-code .s1,
+[data-theme="dark"] .dashdown-code .s2,
+[data-theme="dark"] .dashdown-code .se,
+[data-theme="dark"] .dashdown-code .si,
+[data-theme="dark"] .dashdown-code .sr,
+[data-theme="dark"] .dashdown-code .ss { color: #a5d6ff; }
+[data-theme="dark"] .dashdown-code .nt { color: #7ee787; }
+[data-theme="dark"] .dashdown-code .err { color: #ff7b72; }
+[data-theme="dark"] .dashdown-code .gi { color: #aff5b4; background: #033a16; }
+[data-theme="dark"] .dashdown-code .gd { color: #ffdcd7; background: #67060c; }
+
+/* --- Admonition / callout blocks (:::note … :::danger) -------------------- */
+.dashdown-callout {
+  margin: var(--dashdown-space-section) 0;
+  padding: 0.85rem 1.1rem;
+  border-radius: var(--dashdown-radius-control);
+  border: 1px solid oklch(var(--callout-accent) / 0.35);
+  border-left: 3px solid oklch(var(--callout-accent) / 1);
+  background: oklch(var(--callout-accent) / 0.07);
+}
+.dashdown-callout > :first-child { margin-top: 0; }
+.dashdown-callout > :last-child { margin-bottom: 0; }
+.dashdown-callout-title {
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+  color: oklch(var(--callout-accent) / 1);
+}
+/* Accent per kind (oklch triplets so the alpha math above works). */
+.dashdown-callout-note    { --callout-accent: var(--bc2, 55.44% 0.0407 257.42); }
+.dashdown-callout-info    { --callout-accent: 60% 0.13 233; }   /* sky/cyan */
+.dashdown-callout-tip     { --callout-accent: 64% 0.15 150; }   /* green */
+.dashdown-callout-warning { --callout-accent: 75% 0.16 75; }    /* amber */
+.dashdown-callout-danger  { --callout-accent: 58% 0.21 25; }    /* red */
+
+/* --- Task lists ----------------------------------------------------------- */
+.dashdown-prose .contains-task-list { list-style: none; padding-left: 0.25rem; }
+.dashdown-prose .task-list-item { list-style: none; }
+.dashdown-prose .task-list-item-checkbox { margin-right: 0.5rem; vertical-align: middle; }
+
+/* --- Definition lists ----------------------------------------------------- */
+.dashdown-prose dl { margin: var(--dashdown-space-section) 0; }
+.dashdown-prose dt { font-weight: 600; }
+.dashdown-prose dd {
+  margin: 0.15rem 0 0.6rem 1.25rem;
+  color: var(--fallback-bc2, oklch(var(--bc2) / 1));
+}
+
+/* --- Tables (GitHub-flavored markdown) -----------------------------------
+   Plain markdown tables ship as a bare <table> with no class, so they need
+   their own borders/padding. Scoped with :not(.table) so it never touches the
+   <Table> component's DaisyUI table, which lives in the same .dashdown-prose
+   wrapper. Column alignment (`:--:` etc.) arrives as inline styles and wins. */
+.dashdown-prose table:not(.table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: var(--dashdown-space-section) 0;
+  font-size: 0.9375rem;
+  border: 1px solid var(--fallback-b3, oklch(var(--b3) / 1));
+}
+.dashdown-prose table:not(.table) th,
+.dashdown-prose table:not(.table) td {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--fallback-b3, oklch(var(--b3) / 1));
+  text-align: left;
+  vertical-align: top;
+}
+.dashdown-prose table:not(.table) thead th {
+  background: var(--fallback-b2, oklch(var(--b2) / 1));
+  font-weight: 600;
+}
+.dashdown-prose table:not(.table) tbody tr:nth-child(even) {
+  background: var(--fallback-b2, oklch(var(--b2) / 0.4));
+}
+.dashdown-prose table:not(.table) tbody tr:hover {
+  background: var(--fallback-b2, oklch(var(--b2) / 0.7));
+}
+/* Horizontal-scroll container that wraps every markdown table (emitted by the
+   table_open/table_close render rules in render/markdown.py). A wide table
+   scrolls within this box instead of forcing the whole page to scroll sideways
+   on narrow screens. max-width caps it to the prose column so the box itself
+   never overflows the viewport. */
+.dashdown-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: var(--dashdown-space-section) 0;
+}
+/* The wrapper now carries the block spacing; zero the table's own margin so it
+   doesn't double up inside the scroll box (overflow makes the wrapper a BFC,
+   so the table margin would otherwise sit *inside* the box). */
+.dashdown-table-scroll > table:not(.table) {
+  margin: 0;
+}
+
+/* --- Footnotes ------------------------------------------------------------ */
+.dashdown-prose .footnotes {
+  margin-top: var(--dashdown-space-section);
+  font-size: 0.875rem;
+  color: var(--fallback-bc2, oklch(var(--bc2) / 1));
+}
+.dashdown-prose .footnotes-sep {
+  margin: var(--dashdown-space-section) 0 1rem;
+  border: 0;
+  border-top: 1px solid var(--fallback-b3, oklch(var(--b3) / 1));
+}
+
+/* --- Heading anchors (anchors_plugin permalink) --------------------------- */
+.dashdown-prose .header-anchor {
+  margin-left: 0.4rem;
+  text-decoration: none;
+  opacity: 0;
+  color: var(--fallback-bc3, oklch(var(--bc3) / 1));
+  transition: opacity 0.12s ease;
+}
+.dashdown-prose :hover > .header-anchor,
+.dashdown-prose .header-anchor:focus { opacity: 1; }
+
+/* --- Mermaid diagrams ----------------------------------------
+   `mermaid.js` replaces each ```mermaid block (a <pre class="dashdown-mermaid">
+   until upgraded) with a centered SVG. Until the lazy-loaded bundle renders, the
+   block keeps its .dashdown-code styling as a readable source/loading state. */
+.dashdown-mermaid-diagram {
+  display: flex;
+  justify-content: center;
+  margin: var(--dashdown-space-section) 0;
+}
+.dashdown-mermaid-diagram svg {
+  max-width: 100%;
+  height: auto;
+}
+/* Render failure: stack the note above the fallback source block. */
+.dashdown-mermaid-diagram.dashdown-mermaid-failed {
+  flex-direction: column;
+  align-items: stretch;
+}
+.dashdown-mermaid-error {
+  margin: 0 0 0.5rem;
+  font-size: 0.875rem;
+  color: var(--fallback-er, oklch(var(--er) / 1));
+}
+
+/* === PDF export / print mode ============================================
+   Activated by the `dashdown-print` class on <html> (set by print.js when the
+   page is opened for `dashdown pdf`, or with ?_print=1 to preview). The PDF is
+   rendered from the static export, so this dresses the same HTML for a
+   "presentation" document: app chrome hidden, one widget per row, a gradient
+   cover, and page-break rules so a chart/table isn't split across pages.
+   Keyed on the class (not @media print) so it's deterministic under Playwright
+   and previewable on screen. `print_background` must be on for the gradients. */
+
+/* Hide the app shell — header, sidebar, breadcrumbs, filter bar. (Filters are
+   already stripped from the static export; this also covers a ?_print preview
+   of the live server.) */
+.dashdown-print .dashdown-header,
+.dashdown-print .dashdown-sidebar,
+.dashdown-print .dashdown-sidebar-overlay,
+.dashdown-print .dashdown-breadcrumbs,
+.dashdown-print .dashdown-page-topbar,
+.dashdown-print .dashdown-filter-bar,
+.dashdown-print .dashdown-filter-badge,
+.dashdown-print .dashdown-explain-btn,
+.dashdown-print .dashdown-chart-expand-btn,
+.dashdown-print .dashdown-map-reset,
+.dashdown-print .dashdown-map-zoom-hint,
+.dashdown-print .dashdown-build-stamp,
+.dashdown-print .dashdown-made-with,
+.dashdown-print .dashdown-code-copy,
+.dashdown-print .dashdown-theme-fab {
+  display: none !important;
+}
+.dashdown-print .dashdown-layout {
+  display: block;
+  min-height: 0;
+}
+.dashdown-print .dashdown-main {
+  padding: 0 !important;
+  /* Constrain the content column to the chosen page's printable width (set as
+     a CSS var by print.js::setPageRule) so ECharts canvases render at the final
+     page size, not the user's window width. The server PDF engine sizes its
+     headless viewport to the paper instead, so it leaves the var unset and this
+     falls back to the full width (no centering effect). */
+  width: var(--dashdown-print-width, 100%);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Print the deck's surfaces + gradient cover even when the browser's "Background
+   graphics" toggle is OFF (the default for the client window.print() fallback in
+   static exports). print-color-adjust:exact overrides that toggle per element,
+   so the cover gradient, card/table/counter surfaces, callouts and code blocks
+   keep their fills. The server engine already passes print_background=True, so
+   this is a harmless no-op there. */
+.dashdown-print .dashdown-print-cover,
+.dashdown-print .dashdown-chart,
+.dashdown-print .dashdown-table,
+.dashdown-print .dashdown-counter,
+.dashdown-print .dashdown-pivot,
+.dashdown-print .dashdown-callout,
+.dashdown-print .dashdown-code,
+.dashdown-print .card {
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.dashdown-print .dashdown-main > .dashdown-prose {
+  /* The on-screen max-w-7xl/centering would leave wide margins on a print page;
+     let content use the full printable width. Chromium applies the page margins
+     (header/footer breathing room), so no extra padding here. */
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0;
+}
+
+/* Vertical grid: <Grid cols=N> stacks to one widget per row, regardless of the
+   on-screen column count — a presentation reads top-to-bottom. */
+.dashdown-print .dashdown-grid {
+  grid-template-columns: 1fr !important;
+}
+.dashdown-print .dashdown-grid > * {
+  grid-column: span 1 !important;
+}
+
+/* Tabs: a printed page can't click, so hide the tab bar and force-show every
+   panel stacked, each introduced by its (screen-hidden) title. This also lets
+   the print resize pass re-measure charts that initialized inside a hidden
+   panel at 0×0. */
+.dashdown-print .dashdown-tabs-nav {
+  display: none !important;
+}
+.dashdown-print .dashdown-tabs-panels > .dashdown-tab-panel {
+  display: block !important;
+}
+.dashdown-print .dashdown-tab-panel-heading {
+  display: block;
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin: var(--dashdown-space-section) 0 0.75rem;
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+/* Keep a chart/table/card/diagram whole on a page where it fits. */
+.dashdown-print .dashdown-chart,
+.dashdown-print .dashdown-table,
+.dashdown-print .dashdown-counter,
+.dashdown-print .dashdown-pivot,
+.dashdown-print .dashdown-mermaid-diagram,
+.dashdown-print .card {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+.dashdown-print .dashdown-prose h1,
+.dashdown-print .dashdown-prose h2,
+.dashdown-print .dashdown-prose h3 {
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+/* Charts/tables must not exceed the printable width. The ECharts canvas is
+   sized to the print viewport so it already fits; these clamp any sub-pixel
+   overflow so nothing spills off the right edge of the page. */
+.dashdown-print .dashdown-chart {
+  overflow: hidden;
+}
+.dashdown-print .dashdown-chart-container,
+.dashdown-print .dashdown-chart canvas,
+.dashdown-print .dashdown-table {
+  max-width: 100% !important;
+}
+/* On screen a wide <Table> keeps its cells on one line and scrolls horizontally
+   (the nowrap rule up top). Paper has no scroll, so let cells wrap again here so
+   a wide table reflows to fit the printable width instead of clipping columns
+   off the right edge. */
+.dashdown-print .dashdown-table .table th,
+.dashdown-print .dashdown-table .table td {
+  white-space: normal;
+}
+
+/* A <video> can't play on paper, so its native control chrome (play button +
+   scrubber) just reads as a broken player overlaid on the poster. Hide the
+   controls so the poster frame prints as a clean image, and keep the element
+   whole on a page. (Chromium-only pseudo-elements — which is exactly the engine
+   for both PDF paths: Playwright headless print and the static-build
+   `window.print()` fallback.) */
+.dashdown-print video::-webkit-media-controls,
+.dashdown-print video::-webkit-media-controls-enclosure {
+  display: none !important;
+}
+.dashdown-print video {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+/* Gradient cover page (injected by print.js). Fills one printed page, palette
+   colors via the --dashdown-cover-* custom props the script sets per page. */
+.dashdown-print-cover {
+  display: none; /* only shown in print mode */
+}
+.dashdown-print .dashdown-print-cover {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  /* One page tall. On the client window.print() path the on-screen viewport
+     isn't the paper, so `100vh` would over/undershoot (a tall window spills the
+     cover onto a blank second page); print.js publishes the page's printable
+     height as a var. The server engine's viewport IS the paper, so it leaves the
+     var unset and `100vh` is exactly one page. */
+  min-height: var(--dashdown-print-height, 100vh);
+  margin: 0;
+  padding: 4rem 3.5rem;
+  color: #fff;
+  background: linear-gradient(
+    135deg,
+    var(--dashdown-cover-from, #4f46e5),
+    var(--dashdown-cover-to, #312e81)
+  );
+  break-after: page;
+  page-break-after: always;
+}
+.dashdown-print-cover-inner {
+  max-width: 80%;
+}
+.dashdown-print-cover-project {
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.85;
+  margin-bottom: 1.5rem;
+}
+/* Scoped under `.dashdown-print` (specificity 0,0,2,0) AND marked `!important`
+   so it beats the general `.dashdown-main h1` rule — that one is `!important`
+   too (so plain specificity can't win it) and would otherwise force the cover
+   title to the small, dark, semibold page-heading style, leaving it nearly
+   invisible on the gradient. */
+.dashdown-print .dashdown-print-cover-title {
+  font-size: 4rem !important;
+  line-height: 1.08;
+  font-weight: 800 !important;
+  margin: 0 0 1.75rem !important;
+  padding: 0;
+  border: 0;
+  color: #fff !important;
+}
+.dashdown-print-cover-date {
+  font-size: 1.375rem;
+  opacity: 0.9;
+}
+
+/* === Export settings dialog (CSV / PDF) ===============================
+   A native <dialog class="modal"> shown before an export runs (see
+   export_modal.js): the table CSV export and the header "PDF" button both use
+   it. DaisyUI's modal classes (.modal/.modal-box/.modal-action/.modal-backdrop)
+   aren't in the current vendored Tailwind bundle yet — they're now referenced in
+   the JS the JIT scans, so a CSS rebuild will emit DaisyUI's own styles; until
+   then these rules provide the essentials. The native <dialog> supplies the
+   top-layer rendering + ::backdrop. */
+dialog.dashdown-export-modal {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: 100vw;
+  max-height: 100vh;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+}
+/* Only when open (a closed <dialog> must stay display:none). Centers the box,
+   so a click in the empty area around it cancels (handled in export_modal.js). */
+dialog.dashdown-export-modal[open] {
+  display: grid;
+  place-items: center;
+}
+dialog.dashdown-export-modal::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+.dashdown-export-modal .modal-box {
+  width: 100%;
+  max-width: 22rem;
+  padding: 1.5rem;
+  background-color: var(--fallback-b1, oklch(var(--b1) / 1));
+  border-radius: var(--dashdown-radius-card);
+  box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.35);
+}
+.dashdown-export-modal .modal-action {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+}
+.dashdown-export-modal .checkbox {
+  height: 1.25rem;
+  width: 1.25rem;
+}
+
+/* === Fullscreen viewer modal ============================================
+   The ⛶ button on a chart / table opens this near-fullscreen <dialog> with a
+   Chart / Table / Pivot view switcher (fullscreen.js). Native <dialog> gives the
+   top-layer render + ::backdrop + Escape-to-close; these rules supply what
+   DaisyUI's un-vendored .modal-box would (same posture as .dashdown-export-modal
+   above). */
+dialog.dashdown-fullscreen-modal {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: 100vw;
+  max-height: 100vh;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+}
+dialog.dashdown-fullscreen-modal[open] {
+  display: grid;
+  place-items: center;
+}
+dialog.dashdown-fullscreen-modal::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}
+.dashdown-fullscreen-modal .modal-box {
+  display: flex;
+  flex-direction: column;
+  width: 95vw;
+  height: 92vh;
+  max-width: 1400px;
+  padding: 0;
+  background-color: var(--fallback-b1, oklch(var(--b1) / 1));
+  border-radius: var(--dashdown-radius-card);
+  box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+.dashdown-fs-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex: 0 0 auto;
+  padding: 0.625rem 0.75rem 0.625rem 1rem;
+  border-bottom: 1px solid var(--fallback-b3, oklch(var(--b3) / 1));
+}
+.dashdown-fs-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 600;
+  font-size: 1rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Segmented Chart/Table switcher — a pill track with a raised active tab.
+   Hand-styled (DaisyUI's .tabs/.join aren't in the vendored bundle). */
+.dashdown-fs-switch {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 0.125rem;
+  padding: 0.1875rem;
+  border-radius: var(--dashdown-radius-control, 0.5rem);
+  background: color-mix(in oklch, oklch(var(--bc) / 1) 8%, transparent);
+}
+.dashdown-fs-tab {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: oklch(var(--bc) / 0.6);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.25;
+  padding: 0.25rem 0.75rem;
+  border-radius: calc(var(--dashdown-radius-control, 0.5rem) - 0.1875rem);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.dashdown-fs-tab:hover { color: oklch(var(--bc) / 0.9); }
+.dashdown-fs-tab.is-active {
+  background: var(--fallback-b1, oklch(var(--b1) / 1));
+  color: oklch(var(--bc) / 1);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
+}
+.dashdown-fs-close { flex: 0 0 auto; }
+/* Body is a flex column so a single view child fills the height — the chart
+   needs a measurable box for ECharts, the table/pivot scroll within it. */
+.dashdown-fs-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 1rem;
+}
+.dashdown-fs-chart {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+}
+.dashdown-fs-table {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+/* Map view: the geo draw() renders its normal card-body/map shell into this
+   host (it carries .dashdown-map so the shared map-layout rules apply); it
+   just needs the full modal height. */
+.dashdown-fs-map {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.dashdown-fs-loading {
+  flex: 1 1 auto;
+  min-height: 0;
+  border-radius: var(--dashdown-radius-control, 0.5rem);
+}
+
+/* Per-table CSV export button (in the table toolbar). Muted until hovered,
+   matching the quiet card chrome. */
+.dashdown-table-export {
+  color: var(--fallback-bc2, oklch(var(--bc) / 0.6));
+}
+.dashdown-table-export:hover {
+  color: var(--fallback-bc, oklch(var(--bc) / 1));
+}
+/* Table toolbar fullscreen (⛶) button — same quiet-until-hover chrome. */
+.dashdown-table-fullscreen {
+  color: var(--fallback-bc2, oklch(var(--bc) / 0.6));
+}
+.dashdown-table-fullscreen:hover {
+  color: var(--fallback-bc, oklch(var(--bc) / 1));
+}
+
+/* Interactive table chrome (search box + export button) is noise in a printed
+   PDF — hide the whole actions group, keeping the table title. */
+.dashdown-print .dashdown-table-actions {
+  display: none !important;
+}
+
+/* --- Geo map components (ChoroplethTime / ChoroplethFacets / BivariateMap /
+   BubbleMap / DotDensityMap) --------------------------------------------------
+   Self-drawn SVG maps over the bundled world geometry. Data-driven fills are
+   inline styles from the JS color ramps; everything structural (borders,
+   no-data tone, chrome) lives here on theme-aware tokens so the maps sit
+   correctly on any DaisyUI theme. */
+.dashdown-map .dashdown-map-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.dashdown-map-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.dashdown-map-card-title {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--fallback-bc, oklch(var(--bc) / 1));
+}
+/* The title is component chrome, not prose: dodge the page's global
+   `.dashdown-main h3` typography, which is !important — needs an !important
+   guard of higher specificity to win in-page (the fullscreen modal mounts on
+   <body>, outside .dashdown-main, where the base rule above suffices). */
+.dashdown-map .dashdown-map-card-title {
+  margin: 0 !important;
+  font-size: 0.875rem !important;
+}
+.dashdown-map-region {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+/* Overlaid chrome (mapShell's default): title top-left, controls (metric
+   toggle) bottom-right, legends bottom-left (below), reset pill / zoom hint
+   bottom-center — the map itself gets the whole card. Translucent washes keep
+   each piece readable over land (and invisible over the letterbox gutters);
+   non-interactive pieces let pointer events through to the countries. */
+.dashdown-map-region > .dashdown-map-card-title {
+  position: absolute;
+  top: 0.625rem;
+  left: 0.625rem;
+  z-index: 5;
+  margin: 0;
+  padding: 0.25rem 0.5rem;
+  background: oklch(var(--b1) / 0.72);
+  border-radius: var(--dashdown-radius-control, 0.5rem);
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+}
+.dashdown-map-region > .dashdown-map-controls {
+  position: absolute;
+  right: 0.625rem;
+  bottom: 0.625rem;
+  z-index: 6;
+}
+.dashdown-map-region > .dashdown-map-controls .dashdown-map-toggle {
+  background: oklch(var(--b1) / 0.85);
+  backdrop-filter: blur(2px);
+}
+.dashdown-map-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+/* Pan/zoom (enableMapZoom in _geo.js): ⌘/Ctrl+scroll or a pinch zooms around
+   the pointer, dragging pans once zoomed, double-click zooms in, the "Reset
+   view" pill resets. The pill sits in the same bottom-center slot the zoom
+   hint flashes in (they never show together — _geo.js suppresses the hint
+   while zoomed), so the map's transient zoom chrome lives in one place, clear
+   of the card-corner ⛶ / filter badge cluster. */
+.dashdown-map-svg.is-zoomed { cursor: grab; }
+.dashdown-map-svg.is-zoomed:active { cursor: grabbing; }
+.dashdown-map-reset {
+  position: absolute;
+  left: 50%;
+  bottom: 0.625rem;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  border: 1px solid var(--fallback-b3, oklch(var(--b3) / 1));
+  border-radius: 999px;
+  background: var(--fallback-b1, oklch(var(--b1) / 1));
+  color: oklch(var(--bc) / 0.7);
+  cursor: pointer;
+  box-shadow: var(--dashdown-shadow-raised);
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+/* display:inline-flex beats the UA's [hidden] rule — restate it, or the pill
+   shows on an un-zoomed map. */
+.dashdown-map-reset[hidden] { display: none; }
+.dashdown-map-reset:hover,
+.dashdown-map-reset:focus-visible {
+  color: var(--fallback-bc, oklch(var(--bc) / 1));
+  border-color: oklch(var(--bc) / 0.3);
+  outline: none;
+}
+.dashdown-map-reset svg { width: 0.875rem; height: 0.875rem; flex: none; }
+/* "Use ⌘/Ctrl + scroll to zoom" — flashed when a plain wheel passes over the
+   map (scrolling stays with the page, Google-Maps-embed style). */
+.dashdown-map-zoom-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 0.625rem;
+  transform: translateX(-50%);
+  z-index: 6;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  color: var(--fallback-bc, oklch(var(--bc) / 1));
+  background: var(--fallback-b1, oklch(var(--b1) / 1));
+  border: 1px solid var(--fallback-b3, oklch(var(--b3) / 1));
+  border-radius: 999px;
+  box-shadow: var(--dashdown-shadow-raised);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+}
+.dashdown-map-zoom-hint.is-visible { opacity: 1; }
+/* Country shapes: hairline borders in the card surface color so shared borders
+   read etched; no-data countries take a faint neutral wash. */
+.dashdown-map-country {
+  stroke: var(--fallback-b1, oklch(var(--b1) / 1));
+  stroke-width: 0.5;
+  stroke-linejoin: round;
+}
+.dashdown-map-country.is-nodata {
+  fill: oklch(var(--bc) / 0.08);
+}
+/* Muted backdrop under symbols (BubbleMap) / dots (DotDensityMap). */
+.dashdown-map-country.is-basemap {
+  fill: oklch(var(--bc) / 0.1);
+}
+.dashdown-map-bubble {
+  fill-opacity: 0.55;
+  stroke: var(--fallback-b1, oklch(var(--b1) / 1));
+  stroke-width: 0.75;
+}
+.dashdown-map-bubble:hover {
+  fill-opacity: 0.8;
+}
+.dashdown-map-dot {
+  fill-opacity: 0.75;
+}
+/* Explain-annotation halos (_geo.js::drawGeoAnnotations): a dashed ring +
+   leader-line label over the data layers — muted, deliberately quieter than
+   the data symbols (the geo twin of the ECharts marks in annotations.js).
+   `.is-emphasized` (a hovered/focused ref chip) bolds the one cited mark —
+   bolding only, no dim-the-rest layer. Strokes are non-scaling (set in JS),
+   so halos stay hairline under viewBox zoom. */
+.dashdown-map-anno-halo {
+  fill: none;
+  stroke: oklch(var(--bc) / 0.75);
+  stroke-width: 1.4;
+  stroke-dasharray: 4 3;
+}
+.dashdown-map-anno-leader {
+  stroke: oklch(var(--bc) / 0.55);
+  stroke-width: 1;
+}
+.dashdown-map-anno-label {
+  fill: var(--fallback-bc, oklch(var(--bc) / 1));
+  font-weight: 600;
+  /* Keep the text legible over busy basemaps: a card-surface halo behind the
+     glyphs (paint-order draws the stroke under the fill). */
+  paint-order: stroke;
+  stroke: var(--fallback-b1, oklch(var(--b1) / 1));
+  stroke-width: 2.5px;
+  stroke-linejoin: round;
+}
+.dashdown-map-anno.is-emphasized .dashdown-map-anno-halo {
+  stroke: var(--fallback-bc, oklch(var(--bc) / 1));
+  stroke-width: 2.5;
+  stroke-dasharray: none;
+}
+.dashdown-map-anno.is-emphasized .dashdown-map-anno-leader {
+  stroke: var(--fallback-bc, oklch(var(--bc) / 1));
+}
+.dashdown-map-empty {
+  height: 100%;
+  min-height: 6rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.875rem;
+  color: var(--fallback-bc3, oklch(var(--bc3) / 1));
+}
+
+/* Shared hover tooltip (one per map region, positioned by JS). */
+.dashdown-map-tooltip {
+  position: absolute;
+  z-index: 10;
+  pointer-events: none;
+  max-width: 16rem;
+  padding: 0.375rem 0.625rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--fallback-bc, oklch(var(--bc) / 1));
+  background: var(--fallback-b1, oklch(var(--b1) / 1));
+  border: 1px solid var(--fallback-b3, oklch(var(--b3) / 1));
+  border-radius: var(--dashdown-radius-control, 0.5rem);
+  box-shadow: var(--dashdown-shadow-raised);
+}
+
+/* Footer chrome: the ChoroplethTime timeline + the facets legend. Hidden when
+   a map overlays all its chrome on the region (the default) — an empty footer
+   would still cost one flex gap of map height. */
+.dashdown-map-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+.dashdown-map-footer:empty { display: none; }
+/* Legend overlays share the bottom-left slot (positioning also used by the
+   BivariateMap matrix below); the wash lives on the legend pill itself. */
+.dashdown-map-overlay-legend {
+  position: absolute;
+  left: 0.625rem;
+  bottom: 0.625rem;
+  z-index: 5;
+  pointer-events: none;
+}
+.dashdown-map-overlay-legend .dashdown-map-legend {
+  padding: 0.25rem 0.5rem;
+  background: oklch(var(--b1) / 0.72);
+  border-radius: var(--dashdown-radius-control, 0.5rem);
+  backdrop-filter: blur(2px);
+}
+.dashdown-map-legend {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.7rem;
+  color: var(--fallback-bc2, oklch(var(--bc2) / 1));
+}
+.dashdown-map-legend-bar {
+  height: 0.5rem;
+  width: 9rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--fallback-b3, oklch(var(--b3) / 1));
+}
+.dashdown-map-legend-label {
+  font-weight: 600;
+  color: var(--fallback-bc, oklch(var(--bc) / 1));
+}
+.dashdown-map-legend-swatch {
+  flex: none;
+  display: block;
+}
+
+/* Metric toggle: the component's own segmented control (deliberately not a
+   Dashdown filter — static exports keep it working with baked data). */
+.dashdown-map-toggle {
+  display: inline-flex;
+  border: 1px solid var(--fallback-b3, oklch(var(--b3) / 1));
+  border-radius: var(--dashdown-radius-control, 0.5rem);
+  overflow: hidden;
+}
+.dashdown-map-toggle-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0.25rem 0.625rem;
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--fallback-bc2, oklch(var(--bc2) / 1));
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.dashdown-map-toggle-btn + .dashdown-map-toggle-btn {
+  border-left: 1px solid var(--fallback-b3, oklch(var(--b3) / 1));
+}
+.dashdown-map-toggle-btn:hover {
+  background: oklch(var(--bc) / 0.06);
+}
+.dashdown-map-toggle-btn.is-active {
+  background: var(--fallback-p, oklch(var(--p) / 1));
+  color: var(--fallback-pc, oklch(var(--pc) / 1));
+}
+
+/* ChoroplethTime play/scrub timeline. */
+.dashdown-map-timeline {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+.dashdown-map-play {
+  appearance: none;
+  border: 1px solid var(--fallback-b3, oklch(var(--b3) / 1));
+  border-radius: 9999px;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.625rem;
+  background: transparent;
+  color: var(--fallback-bc, oklch(var(--bc) / 1));
+  cursor: pointer;
+}
+.dashdown-map-play:hover {
+  background: oklch(var(--bc) / 0.06);
+}
+.dashdown-map-scrub {
+  flex: 1 1 auto;
+  min-width: 0;
+  accent-color: var(--fallback-p, oklch(var(--p) / 1));
+}
+.dashdown-map-year {
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  min-width: 2.75rem;
+  text-align: right;
+  color: var(--fallback-bc, oklch(var(--bc) / 1));
+}
+
+/* ChoroplethFacets grid (column count set inline from `columns=`). */
+.dashdown-map-facets {
+  display: grid;
+  gap: var(--dashdown-grid-gap, 1rem);
+}
+.dashdown-map-facet-caption {
+  text-align: center;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--fallback-bc2, oklch(var(--bc2) / 1));
+}
+
+/* BivariateMap 3×3 legend: overlaid on the map's bottom-left corner (empty
+   ocean in the world view) on a translucent card wash, so it costs the map no
+   height. Non-interactive — pointer-events off keeps the country tooltips
+   live underneath, e.g. when zoomed land sits behind it. */
+.dashdown-map-bilegend {
+  position: absolute;
+  left: 0.625rem;
+  bottom: 0.625rem;
+  z-index: 5;
+  display: flex;
+  align-items: flex-end;
+  gap: 0.375rem;
+  padding: 0.375rem 0.5rem;
+  font-size: 0.7rem;
+  color: var(--fallback-bc2, oklch(var(--bc2) / 1));
+  background: oklch(var(--b1) / 0.72);
+  border-radius: var(--dashdown-radius-control, 0.5rem);
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+}
+.dashdown-map-bilegend-y {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  line-height: 1;
+}
+.dashdown-map-bilegend-cols {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.dashdown-map-bilegend-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 0.875rem);
+  grid-auto-rows: 0.875rem;
+  gap: 1px;
+}
+.dashdown-map-bilegend-grid i {
+  display: block;
+}
