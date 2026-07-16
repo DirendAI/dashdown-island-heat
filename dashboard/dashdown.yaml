@@ -1,4 +1,11 @@
 title: Urban Heat Islands
+
+# AI commentary (<Ask> blocks + chart `explain` buttons). The key comes from the
+# environment: locally `export MISTRAL_API_KEY=...`, in CI the repo secret.
+# Absent/invalid key never breaks serve or build — AI cards show a muted note.
+llm:
+  provider: mistral
+  api_key: ${MISTRAL_API_KEY}
 agents: [claude]   # coding-agent guides to keep in sync via `dashdown skill`
 
 branding:
