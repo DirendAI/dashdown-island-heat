@@ -1,5 +1,7 @@
 # data: DuckDB + caches are reproducible via `heat-island add-city`
-data/
+# (anchored to repo root — an unanchored `data/` would also swallow the
+# static site's pre-rendered query snapshots under site/_dashdown/data/)
+/data/
 
 # python
 __pycache__/
