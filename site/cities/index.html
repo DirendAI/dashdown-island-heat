@@ -17,7 +17,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   
   <base href="../"><script>(function(){var n=1,p=location.pathname;p=p.replace(/index\.html$/,'');if(p.charAt(p.length-1)!=='/')p+='/';for(var i=0;i<n;i++)p=p.replace(/[^/]*\/$/,'');var b=document.getElementsByTagName('base')[0];if(b)b.href=location.origin+p;})();</script>
-  <title>ML insights · Urban Heat Islands</title>
+  <title>Cities · Urban Heat Islands</title>
   
   <link rel="icon" href="_dashdown/static/favicon.svg" />
   <!-- Apply theme + embed mode before any paint to prevent flash -->
@@ -185,7 +185,7 @@
 <a href="heat-map/index.html" class="dashdown-sidenav-link "><span class="dashdown-sidenav-icon">🗺️</span> Heat map</a>
 </li>
 <li class="dashdown-sidenav-item">
-<a href="ml-insights/index.html" class="dashdown-sidenav-link active"><span class="dashdown-sidenav-icon">🧠</span> ML insights</a>
+<a href="ml-insights/index.html" class="dashdown-sidenav-link "><span class="dashdown-sidenav-icon">🧠</span> ML insights</a>
 </li>
 <li class="dashdown-sidenav-item">
 <a href="priorities/index.html" class="dashdown-sidenav-link "><span class="dashdown-sidenav-icon">🌳</span> Planting priorities</a>
@@ -204,7 +204,7 @@
     
 
     <script id="dashdown-data" type="application/json">{}</script>
-    <script id="dashdown-query-defs" type="application/json">{"cities": {"connector": "heat", "params": [], "data_url": "_dashdown/data/heat/cities.json"}, "metrics": {"connector": "heat", "params": ["city"], "data_url": "_dashdown/data/heat/metrics.json"}, "feat_imp": {"connector": "heat", "params": ["city"], "data_url": "_dashdown/data/heat/feat_imp.json"}, "pred_vs_actual": {"connector": "heat", "params": ["city"], "data_url": "_dashdown/data/heat/pred_vs_actual.json"}, "uncertainty": {"connector": "heat", "params": ["city"], "data_url": "_dashdown/data/heat/uncertainty.json"}}</script>
+    <script id="dashdown-query-defs" type="application/json">{"cities_dir": {"connector": "heat", "params": [], "data_url": "_dashdown/data/heat/cities_dir.json"}}</script>
     
     
     <!-- Present only in `dashdown build` static export: routes query data to pre-rendered JSON. -->
@@ -233,7 +233,7 @@
               
             
               
-                <li class="text-base-content font-semibold">ML insights</li>
+                <li class="text-base-content font-semibold">Cities</li>
               
             
           </ul>
@@ -245,43 +245,13 @@
 
       
       <div class="dashdown-content-col dashdown-prose">
-        
-<p>How well the LightGBM model explains a city's heat, what drives its predictions,
-and how the greening counterfactual is grounded.</p>
-<h2 id="model-quality">Model quality <a class="header-anchor" href="#model-quality">#</a></h2>
-<p>Scored under <strong>spatial cross-validation</strong>, so these are honest out-of-area
-numbers, not a memorised fit.</p>
-<div id="dashdown-grid-cfce961f" class="dashdown-grid dashdown-grid-responsive" style="grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--dashdown-grid-gap, 1rem);" data-cols="3"><div id="dashdown-counter-d9cfe7c0" data-async-component="counter" data-config="{&quot;query_name&quot;: &quot;metrics&quot;, &quot;row&quot;: 0, &quot;prefix&quot;: &quot;&quot;, &quot;suffix&quot;: &quot;&quot;, &quot;column&quot;: &quot;r2&quot;, &quot;format&quot;: &quot;number&quot;, &quot;decimals&quot;: 3}" data-query-name="metrics" class="dashdown-counter card bg-base-100 border border-base-300 p-4 flex flex-col"><div class="dashdown-counter-head flex items-center justify-between gap-2"><div class="dashdown-counter-label text-xs font-medium uppercase tracking-wide text-base-content/60">R² (spatial CV)</div><span class="dashdown-counter-delta"></span></div><div class="dashdown-counter-value text-base-content text-2xl font-semibold mt-1"><span class="dashdown-counter-skeleton skeleton inline-block w-24 h-8"></span></div></div>
-<div id="dashdown-counter-50cafcc7" data-async-component="counter" data-config="{&quot;query_name&quot;: &quot;metrics&quot;, &quot;row&quot;: 0, &quot;prefix&quot;: &quot;&quot;, &quot;suffix&quot;: &quot;\u00b0C&quot;, &quot;column&quot;: &quot;mae&quot;, &quot;format&quot;: &quot;number&quot;, &quot;decimals&quot;: 2}" data-query-name="metrics" class="dashdown-counter card bg-base-100 border border-base-300 p-4 flex flex-col"><div class="dashdown-counter-head flex items-center justify-between gap-2"><div class="dashdown-counter-label text-xs font-medium uppercase tracking-wide text-base-content/60">Mean abs. error</div><span class="dashdown-counter-delta"></span></div><div class="dashdown-counter-value text-base-content text-2xl font-semibold mt-1"><span class="dashdown-counter-skeleton skeleton inline-block w-24 h-8"></span></div></div>
-<div id="dashdown-counter-1fa669e1" data-async-component="counter" data-config="{&quot;query_name&quot;: &quot;metrics&quot;, &quot;row&quot;: 0, &quot;prefix&quot;: &quot;&quot;, &quot;suffix&quot;: &quot;&quot;, &quot;column&quot;: &quot;n_train&quot;, &quot;format&quot;: &quot;number&quot;, &quot;decimals&quot;: 0}" data-query-name="metrics" class="dashdown-counter card bg-base-100 border border-base-300 p-4 flex flex-col"><div class="dashdown-counter-head flex items-center justify-between gap-2"><div class="dashdown-counter-label text-xs font-medium uppercase tracking-wide text-base-content/60">Training hexes</div><span class="dashdown-counter-delta"></span></div><div class="dashdown-counter-value text-base-content text-2xl font-semibold mt-1"><span class="dashdown-counter-skeleton skeleton inline-block w-24 h-8"></span></div></div></div>
-<h2 id="what-drives-the-heat">What drives the heat <a class="header-anchor" href="#what-drives-the-heat">#</a></h2>
-<p>Mean absolute <strong>SHAP</strong> value per feature — how much each input moves the
-predicted temperature, on average. Built-up density (<strong>NDBI</strong>) and building
-density dominate; vegetation and water proximity pull the other way.</p>
-<div class="dashdown-chart card bg-base-100 border border-base-300" id="dashdown-bar-9f3c6b47" style="width:100%;height:380px;" data-async-component="chart" data-config="{&quot;type&quot;: &quot;bar&quot;, &quot;query_name&quot;: &quot;feat_imp&quot;, &quot;x&quot;: &quot;feature&quot;, &quot;y&quot;: &quot;mean_abs_shap&quot;, &quot;title&quot;: &quot;Feature importance (mean |SHAP|, \u00b0C)&quot;, &quot;series_by&quot;: null, &quot;sort_by&quot;: null, &quot;empty_message&quot;: &quot;No data available&quot;, &quot;horizontal&quot;: true}" data-component-id="dashdown-bar-9f3c6b47" data-query-name="feat_imp"><div class="card-body p-4 h-full"><div class="dashdown-chart-skeleton skeleton w-full h-full"></div></div><button type="button" class="dashdown-chart-expand-btn" aria-label="View fullscreen" title="View fullscreen"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 3H4a1 1 0 00-1 1v4m0 8v4a1 1 0 001 1h4m8 0h4a1 1 0 001-1v-4m0-8V4a1 1 0 00-1-1h-4"/></svg></button></div>
-<h2 id="predicted-vs-observed">Predicted vs observed <a class="header-anchor" href="#predicted-vs-observed">#</a></h2>
-<p>Each point is one hex: observed LST on the x-axis, the model's prediction on the
-y-axis. A perfect model would sit on the <strong>1:1 line</strong> — points hug it here, and
-the vertical scatter around it is the residual error (the ~1 °C MAE above).</p>
-<div class="dashdown-chart card bg-base-100 border border-base-300" id="dashdown-scatter-c53fd1bb" style="width:100%;height:440px;" data-async-component="chart" data-config="{&quot;type&quot;: &quot;scatter&quot;, &quot;query_name&quot;: &quot;pred_vs_actual&quot;, &quot;x&quot;: &quot;mean_lst_c&quot;, &quot;y&quot;: &quot;predicted_lst_c&quot;, &quot;title&quot;: &quot;Predicted vs observed LST (\u00b0C)&quot;, &quot;series_by&quot;: null, &quot;sort_by&quot;: null, &quot;empty_message&quot;: &quot;No data available&quot;}" data-component-id="dashdown-scatter-c53fd1bb" data-query-name="pred_vs_actual"><div class="card-body p-4 h-full"><div class="dashdown-chart-skeleton skeleton w-full h-full"></div></div><button type="button" class="dashdown-chart-expand-btn" aria-label="View fullscreen" title="View fullscreen"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 3H4a1 1 0 00-1 1v4m0 8v4a1 1 0 001 1h4m8 0h4a1 1 0 001-1v-4m0-8V4a1 1 0 00-1-1h-4"/></svg></button></div>
-<h2 id="why-spatial-cv-matters">Why spatial CV matters <a class="header-anchor" href="#why-spatial-cv-matters">#</a></h2>
-<p>Neighbouring hexes are strongly <strong>autocorrelated</strong> — two adjacent cells share
-almost the same temperature. A plain random train/test split would scatter test
-hexes right next to training hexes, letting the model &quot;peek&quot; at an answer through
-its neighbours and reporting an inflated score.</p>
-<p><strong>Spatial cross-validation</strong> instead holds out whole spatial <strong>blocks</strong> of hexes
-for testing, so a test hex has no training neighbour to leak from. The R² above is
-therefore a measure of genuine generalisation to <strong>unseen ground</strong> — the property
-you need before trusting the model's cooling predictions on new areas or a new
-city.</p>
-<h2 id="ensemble-uncertainty-in-the-cooling-estimate">Ensemble uncertainty in the cooling estimate <a class="header-anchor" href="#ensemble-uncertainty-in-the-cooling-estimate">#</a></h2>
-<p>Spatial CV trains <strong>five</strong> fold models, not one. <code>cooling_uncertainty_c</code> is the
-standard deviation of the plantability-constrained cooling estimate across
-those five: how much the greening counterfactual's answer shifts depending on
-which hexes it happened to train on. It's an <strong>ensemble-honesty measure</strong>, not
-a formal confidence interval — a wide spread flags a hex where the fold models
-disagree, a narrow one where they agree.</p>
-<div id="dashdown-counter-6ac86838" data-async-component="counter" data-config="{&quot;query_name&quot;: &quot;uncertainty&quot;, &quot;row&quot;: 0, &quot;prefix&quot;: &quot;&quot;, &quot;suffix&quot;: &quot;\u00b0C&quot;, &quot;column&quot;: &quot;mean_uncertainty&quot;, &quot;format&quot;: &quot;number&quot;, &quot;decimals&quot;: 2}" data-query-name="uncertainty" class="dashdown-counter card bg-base-100 border border-base-300 p-4 flex flex-col"><div class="dashdown-counter-head flex items-center justify-between gap-2"><div class="dashdown-counter-label text-xs font-medium uppercase tracking-wide text-base-content/60">Mean cooling uncertainty across hexes</div><span class="dashdown-counter-delta"></span></div><div class="dashdown-counter-value text-base-content text-2xl font-semibold mt-1"><span class="dashdown-counter-skeleton skeleton inline-block w-24 h-8"></span></div></div>
+        <h1>City snapshot pages</h1>
+<p>Every processed city gets a standalone page with the complete analysis —
+heat maps, model quality, and planting priorities — pre-rendered by the static
+export. Click a row:</p>
+<div class="dashdown-table card bg-base-100 border border-base-300" id="dashdown-table-e5bbf95e" data-async-component="table" data-config="{&quot;query_name&quot;: &quot;cities_dir&quot;, &quot;title&quot;: &quot;Cities in data/heat.duckdb&quot;, &quot;limit&quot;: 100, &quot;link_column&quot;: null, &quot;link_pattern&quot;: null, &quot;empty_message&quot;: &quot;No data available&quot;, &quot;page_size&quot;: 10, &quot;row_link&quot;: &quot;/cities/{city_id}&quot;, &quot;search&quot;: true, &quot;search_placeholder&quot;: &quot;Search\u2026&quot;, &quot;search_auto&quot;: true, &quot;export&quot;: true}" data-component-id="dashdown-table-e5bbf95e" data-query-name="cities_dir"><div class="card-body p-4"><div class="dashdown-table-skeleton"><div class="skeleton h-5 w-40 mb-3"></div><div class="skeleton h-6 w-full mb-3"></div><div class="skeleton h-4 w-full mb-2.5"></div><div class="skeleton h-4 w-full mb-2.5"></div><div class="skeleton h-4 w-full mb-2.5"></div><div class="skeleton h-4 w-full mb-2.5"></div><div class="skeleton h-4 w-full mb-2.5"></div><div class="skeleton h-4 w-full mb-2.5"></div><div class="skeleton h-4 w-full mb-2.5"></div><div class="skeleton h-4 w-full mb-2.5"></div><div class="skeleton h-4 w-full mb-2.5"></div><div class="skeleton h-4 w-full mb-2.5"></div></div></div></div>
+<p>To add a city, run <code>uv run heat-island add-city &quot;&lt;city&gt;&quot;</code> from the repository
+root, then rebuild the static site (<code>dashdown build dashboard --out site</code>).</p>
 
       </div>
 

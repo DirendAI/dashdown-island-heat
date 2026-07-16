@@ -190,6 +190,9 @@
 <li class="dashdown-sidenav-item">
 <a href="priorities/index.html" class="dashdown-sidenav-link "><span class="dashdown-sidenav-icon">🌳</span> Planting priorities</a>
 </li>
+<li class="dashdown-sidenav-item">
+<a href="cities/index.html" class="dashdown-sidenav-link "><span class="dashdown-sidenav-icon">🏙️</span> City pages</a>
+</li>
 </ul>
       </nav>
     </aside>
@@ -205,7 +208,7 @@
     
     
     <!-- Present only in `dashdown build` static export: routes query data to pre-rendered JSON. -->
-    <script id="dashdown-build" type="application/json">{"static": true, "dataBase": "_dashdown/data", "builtAt": "2026-07-16T19:11:29.462725+00:00"}</script>
+    <script id="dashdown-build" type="application/json">{"static": true, "dataBase": "_dashdown/data", "builtAt": "2026-07-16T19:32:35.633839+00:00"}</script>
     
     
     <!-- Production / static: no file watcher, so don't open the live-reload SSE
@@ -251,12 +254,12 @@ a faithful top-down picture of the city that re-queries per selection.</p>
 <h2 id="where-its-hot">Where it's hot <a class="header-anchor" href="#where-its-hot">#</a></h2>
 <p>Each point is one H3 hex at its true position; colour is its land-surface
 temperature quintile, cool <strong>blue</strong> → hot <strong>red</strong>.</p>
-<div class="dashdown-chart card bg-base-100 border border-base-300" id="dashdown-scatter-4042159b" style="width:100%;height:520px;" data-async-component="chart" data-config="{&quot;type&quot;: &quot;scatter&quot;, &quot;query_name&quot;: &quot;lst_map&quot;, &quot;x&quot;: &quot;lon&quot;, &quot;y&quot;: &quot;lat&quot;, &quot;title&quot;: &quot;Land-surface temperature by hex (quintile bands)&quot;, &quot;series_by&quot;: &quot;band&quot;, &quot;sort_by&quot;: null, &quot;empty_message&quot;: &quot;No data available&quot;, &quot;color&quot;: &quot;#4c78a8,#6cc5b0,#f2cf5b,#f58518,#e45756&quot;}" data-component-id="dashdown-scatter-4042159b" data-query-name="lst_map"><div class="card-body p-4 h-full"><div class="dashdown-chart-skeleton skeleton w-full h-full"></div></div><button type="button" class="dashdown-chart-expand-btn" aria-label="View fullscreen" title="View fullscreen"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 3H4a1 1 0 00-1 1v4m0 8v4a1 1 0 001 1h4m8 0h4a1 1 0 001-1v-4m0-8V4a1 1 0 00-1-1h-4"/></svg></button></div>
+<div class="dashdown-chart card bg-base-100 border border-base-300" id="dashdown-scatter-a56924c4" style="width:100%;height:520px;" data-async-component="chart" data-config="{&quot;type&quot;: &quot;scatter&quot;, &quot;query_name&quot;: &quot;lst_map&quot;, &quot;x&quot;: &quot;lon&quot;, &quot;y&quot;: &quot;lat&quot;, &quot;title&quot;: &quot;Land-surface temperature by hex (quintile bands)&quot;, &quot;series_by&quot;: &quot;band&quot;, &quot;sort_by&quot;: null, &quot;empty_message&quot;: &quot;No data available&quot;, &quot;color&quot;: &quot;#4c78a8,#6cc5b0,#f2cf5b,#f58518,#e45756&quot;}" data-component-id="dashdown-scatter-a56924c4" data-query-name="lst_map"><div class="card-body p-4 h-full"><div class="dashdown-chart-skeleton skeleton w-full h-full"></div></div><button type="button" class="dashdown-chart-expand-btn" aria-label="View fullscreen" title="View fullscreen"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 3H4a1 1 0 00-1 1v4m0 8v4a1 1 0 001 1h4m8 0h4a1 1 0 001-1v-4m0-8V4a1 1 0 00-1-1h-4"/></svg></button></div>
 <h2 id="where-its-green">Where it's green <a class="header-anchor" href="#where-its-green">#</a></h2>
 <p>The same hexes coloured by <strong>NDVI</strong> quintile. The ramp is deliberately reversed
 from the heat map so the semantics read naturally: <strong>dark green = highest NDVI</strong>
 (densest vegetation), tan/brown = barest ground.</p>
-<div class="dashdown-chart card bg-base-100 border border-base-300" id="dashdown-scatter-b28c2fb9" style="width:100%;height:520px;" data-async-component="chart" data-config="{&quot;type&quot;: &quot;scatter&quot;, &quot;query_name&quot;: &quot;ndvi_map&quot;, &quot;x&quot;: &quot;lon&quot;, &quot;y&quot;: &quot;lat&quot;, &quot;title&quot;: &quot;Vegetation (NDVI) by hex (quintile bands)&quot;, &quot;series_by&quot;: &quot;band&quot;, &quot;sort_by&quot;: null, &quot;empty_message&quot;: &quot;No data available&quot;, &quot;color&quot;: &quot;#a6611a,#d8b365,#c2e699,#78c679,#238443&quot;}" data-component-id="dashdown-scatter-b28c2fb9" data-query-name="ndvi_map"><div class="card-body p-4 h-full"><div class="dashdown-chart-skeleton skeleton w-full h-full"></div></div><button type="button" class="dashdown-chart-expand-btn" aria-label="View fullscreen" title="View fullscreen"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 3H4a1 1 0 00-1 1v4m0 8v4a1 1 0 001 1h4m8 0h4a1 1 0 001-1v-4m0-8V4a1 1 0 00-1-1h-4"/></svg></button></div>
+<div class="dashdown-chart card bg-base-100 border border-base-300" id="dashdown-scatter-f2ddc28f" style="width:100%;height:520px;" data-async-component="chart" data-config="{&quot;type&quot;: &quot;scatter&quot;, &quot;query_name&quot;: &quot;ndvi_map&quot;, &quot;x&quot;: &quot;lon&quot;, &quot;y&quot;: &quot;lat&quot;, &quot;title&quot;: &quot;Vegetation (NDVI) by hex (quintile bands)&quot;, &quot;series_by&quot;: &quot;band&quot;, &quot;sort_by&quot;: null, &quot;empty_message&quot;: &quot;No data available&quot;, &quot;color&quot;: &quot;#a6611a,#d8b365,#c2e699,#78c679,#238443&quot;}" data-component-id="dashdown-scatter-f2ddc28f" data-query-name="ndvi_map"><div class="card-body p-4 h-full"><div class="dashdown-chart-skeleton skeleton w-full h-full"></div></div><button type="button" class="dashdown-chart-expand-btn" aria-label="View fullscreen" title="View fullscreen"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 3H4a1 1 0 00-1 1v4m0 8v4a1 1 0 001 1h4m8 0h4a1 1 0 001-1v-4m0-8V4a1 1 0 00-1-1h-4"/></svg></button></div>
 <div class="dashdown-callout dashdown-callout-note"><p class="dashdown-callout-title">Note</p><p>NDVI blends all vegetation together. The v0.2 planting model splits it
 further — existing canopy (<code>tree_fraction</code>) and open, plantable ground
 (<code>plantable_fraction</code>) are broken out on <a href="priorities/index.html">Planting priorities</a>.</p>
@@ -264,7 +267,7 @@ further — existing canopy (<code>tree_fraction</code>) and open, plantable gro
 <p>Plotting the two against each other collapses the maps into one relationship. The
 expected sign is <strong>negative</strong> — greener hexes (higher NDVI) tend to run cooler,
 which is exactly the lever the priority model pulls on.</p>
-<div class="dashdown-chart card bg-base-100 border border-base-300" id="dashdown-scatter-9bf6458e" style="width:100%;height:380px;" data-async-component="chart" data-config="{&quot;type&quot;: &quot;scatter&quot;, &quot;query_name&quot;: &quot;lst_vs_ndvi&quot;, &quot;x&quot;: &quot;ndvi&quot;, &quot;y&quot;: &quot;mean_lst_c&quot;, &quot;title&quot;: &quot;LST vs NDVI (one point per hex)&quot;, &quot;series_by&quot;: null, &quot;sort_by&quot;: null, &quot;empty_message&quot;: &quot;No data available&quot;}" data-component-id="dashdown-scatter-9bf6458e" data-query-name="lst_vs_ndvi"><div class="card-body p-4 h-full"><div class="dashdown-chart-skeleton skeleton w-full h-full"></div></div><button type="button" class="dashdown-chart-expand-btn" aria-label="View fullscreen" title="View fullscreen"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 3H4a1 1 0 00-1 1v4m0 8v4a1 1 0 001 1h4m8 0h4a1 1 0 001-1v-4m0-8V4a1 1 0 00-1-1h-4"/></svg></button></div>
+<div class="dashdown-chart card bg-base-100 border border-base-300" id="dashdown-scatter-623eb832" style="width:100%;height:380px;" data-async-component="chart" data-config="{&quot;type&quot;: &quot;scatter&quot;, &quot;query_name&quot;: &quot;lst_vs_ndvi&quot;, &quot;x&quot;: &quot;ndvi&quot;, &quot;y&quot;: &quot;mean_lst_c&quot;, &quot;title&quot;: &quot;LST vs NDVI (one point per hex)&quot;, &quot;series_by&quot;: null, &quot;sort_by&quot;: null, &quot;empty_message&quot;: &quot;No data available&quot;}" data-component-id="dashdown-scatter-623eb832" data-query-name="lst_vs_ndvi"><div class="card-body p-4 h-full"><div class="dashdown-chart-skeleton skeleton w-full h-full"></div></div><button type="button" class="dashdown-chart-expand-btn" aria-label="View fullscreen" title="View fullscreen"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 3H4a1 1 0 00-1 1v4m0 8v4a1 1 0 001 1h4m8 0h4a1 1 0 001-1v-4m0-8V4a1 1 0 00-1-1h-4"/></svg></button></div>
 <div class="dashdown-callout dashdown-callout-note"><p class="dashdown-callout-title">Note</p><p>Every hex is plotted — no sampling or <code>LIMIT</code> — so the map is the full grid
 (~1–2k points per city).</p>
 </div>
@@ -273,7 +276,7 @@ which is exactly the lever the priority model pulls on.</p>
       
       
       <footer class="dashdown-build-stamp dashdown-content-col">
-        Generated <time datetime="2026-07-16T19:11:29.462725+00:00" data-dashdown-build-time>Jul 16, 2026 at 19:11 UTC</time> · built in 331ms
+        Generated <time datetime="2026-07-16T19:32:35.633839+00:00" data-dashdown-build-time>Jul 16, 2026 at 19:32 UTC</time> · built in 319ms
       </footer>
       
 
