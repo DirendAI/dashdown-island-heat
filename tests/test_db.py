@@ -465,3 +465,35 @@ def test_upsert_missing_geometry_raises(tmp_path):
     hex_df = make_hex_df().drop(columns=["geometry"])
     with pytest.raises(Exception):
         db.upsert_city(db_path, make_boundary(), hex_df, make_metrics())
+
+
+def test_migrates_old_21_column_hexes_table(tmp_path):
+    """A heat.duckdb written by v0.1 (21-col hexes) must gain the v0.2 columns on connect
+    and accept a fresh upsert; pre-migration rows read as NULL for the new columns."""
+    db_path = tmp_path / "heat.duckdb"
+    old_cols = [c for c in db.HEX_COLUMNS
+                if c not in ("plantable_fraction", "tree_fraction", "cooling_uncertainty_c")]
+    con = duckdb.connect(str(db_path))
+    decls = ", ".join(f'"{c}" TEXT' if c in ("city_id", "h3", "geometry_wkt") else f'"{c}" DOUBLE'
+                      for c in old_cols)
+    con.execute(f"CREATE TABLE hexes ({decls}, PRIMARY KEY (city_id, h3))")
+    con.execute(
+        "INSERT INTO hexes (city_id, h3, lat, lon, geometry_wkt, mean_lst_c) "
+        "VALUES ('old-city', 'aaa', 1.0, 2.0, 'POLYGON EMPTY', 33.3)"
+    )
+    con.close()
+
+    con = db.connect(db_path)
+    cols = _columns(con, "hexes")
+    assert set(db.HEX_COLUMNS) <= set(cols)
+    row = con.execute(
+        "SELECT plantable_fraction, tree_fraction, cooling_uncertainty_c "
+        "FROM hexes WHERE city_id = 'old-city'"
+    ).fetchone()
+    assert all(v is None for v in row)
+    con.close()
+
+    db.upsert_city(db_path, make_boundary(), make_hex_df(), make_metrics())
+    con = duckdb.connect(str(db_path))
+    assert _count(con, "hexes", "old-city") == 1  # untouched
+    con.close()

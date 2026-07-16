@@ -134,7 +134,27 @@ def connect(db_path: Path) -> duckdb.DuckDBPyConnection:
     con.execute(_CREATE_HEXES_SQL)
     con.execute(_CREATE_MODEL_METRICS_SQL)
     con.execute(_CREATE_FEATURE_IMPORTANCE_SQL)
+    _migrate_hexes(con)
     return con
+
+
+def _migrate_hexes(con: duckdb.DuckDBPyConnection) -> None:
+    """Additive migration: a heat.duckdb created by an older version lacks newer hexes
+    columns (CREATE TABLE IF NOT EXISTS never alters an existing table). Any missing
+    HEX_COLUMNS are appended as nullable DOUBLEs; older rows read as NULL until their
+    city is re-run through `heat-island add-city`.
+    """
+    existing = {
+        row[0]
+        for row in con.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = 'hexes'"
+        ).fetchall()
+    }
+    missing = [c for c in HEX_COLUMNS if c not in existing]
+    for col in missing:
+        con.execute(f'ALTER TABLE hexes ADD COLUMN "{col}" DOUBLE')
+    if missing:
+        log.info("migrated hexes table: added column(s) %s", ", ".join(missing))
 
 
 def _geometry_to_wkt(value: Any) -> str | None:
