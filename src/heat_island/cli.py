@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pandas as pd
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -112,7 +113,7 @@ def add_city(
         console.print("Training LightGBM with spatial cross-validation…")
         result = train_and_evaluate(df, cfg)
 
-        df = run_greening(df, result.model, cfg)  # logs the greening NDVI target itself
+        df = run_greening(df, result.model, cfg, fold_models=result.fold_models)
         df = compute_priority(df)
 
         db.upsert_city(cfg.db_path, boundary, df, result)
@@ -129,7 +130,12 @@ def add_city(
         table.add_row("spatial-CV R²", f"{result.r2:.3f}")
         table.add_row("spatial-CV MAE °C", f"{result.mae:.2f}")
         table.add_row("top SHAP features", ", ".join(f"{k} ({v:.2f})" for k, v in top_shap))
-        table.add_row("max predicted cooling °C", f"{df.predicted_cooling_c.max():.2f}")
+        table.add_row("plantable fraction (mean)", f"{df.plantable_fraction.mean():.2f}")
+        table.add_row("tree cover fraction (mean)", f"{df.tree_fraction.mean():.2f}")
+        cooling_max = df.predicted_cooling_c.max()
+        unc = df.loc[df.predicted_cooling_c.idxmax(), "cooling_uncertainty_c"]
+        unc_txt = "" if pd.isna(unc) else f" ± {unc:.2f}"
+        table.add_row("max predicted cooling °C", f"{cooling_max:.2f}{unc_txt}")
         table.add_row("hexes with priority ≥ 0.8", str(int((df.priority_score >= 0.8).sum())))
         console.print(table)
         console.print(f"[green]✓ {boundary.name} written to[/green] {cfg.db_path}")
