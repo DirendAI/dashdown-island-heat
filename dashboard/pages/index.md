@@ -31,6 +31,14 @@ WHERE city_id = COALESCE(
   (SELECT MIN(city_id) FROM cities))
 ```
 
+```sql cities_dir
+SELECT c.city_id, c.name, c.country, c.n_hexes,
+       ROUND(m.r2, 3) AS model_r2
+FROM cities c
+LEFT JOIN model_metrics m USING (city_id)
+ORDER BY c.name
+```
+
 <Dropdown name="city" data={cities} column="name" label="City" bar />
 
 Where a city bakes and where new tree canopy would cool it the most — mapped hex
@@ -74,6 +82,13 @@ Demographic vulnerability inputs (income, share over 65 / under 5) come from the
 US Census and are absent for cities outside it, so a non-US city's priority leans
 on the heat and cooling terms. The pipeline handles that automatically.
 :::
+
+## Processed cities
+
+Every processed city also has a standalone snapshot page — the full analysis on
+one URL (these are what the static export publishes). Click a row:
+
+<Table data={cities_dir} row_link="/cities/{city_id}" title="Cities in data/heat.duckdb" />
 
 ## Add a city
 

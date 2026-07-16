@@ -77,6 +77,23 @@ Re-running `add-city` is fast: satellite composites and OSM responses are cached
 | `heat-island remove-city <city_id>` | delete a city's rows (cache kept) |
 | `heat-island preview "<city>"` | boundary + hex grid sanity plot, no downloads |
 
+## Publish to GitHub Pages
+
+The dashboard exports to a fully static site (`dashdown build`): every query is
+pre-rendered, and `pages/cities/[city_id].md` emits **one standalone snapshot page per
+processed city** (filter controls need the live server, so the static export links a
+city directory instead of a dropdown). Publishing is three commands:
+
+```bash
+uv run heat-island add-city "<city>"        # (re)process cities
+dashdown build dashboard --out site         # pre-render the static site into site/
+git add site && git commit -m "rebuild site" && git push
+```
+
+`.github/workflows/pages.yml` deploys the committed `site/` to GitHub Pages on every
+push to `main` that touches it (first run enables Pages automatically). The site is
+served at `https://<owner>.github.io/<repo>/` — the export is subpath-safe.
+
 ## Dashboard
 
 The Dashdown project in `dashboard/` serves four pages, each with a **city selector** — every
