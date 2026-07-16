@@ -1,6 +1,6 @@
 [project]
 name = "heat-island"
-version = "0.1.0"
+version = "0.2.0"
 description = "Urban heat island mapper: satellite land-surface temperature + ML tree-planting priorities for any city in the world, served as a Dashdown dashboard"
 readme = "README.md"
 requires-python = ">=3.11,<3.13"

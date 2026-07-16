@@ -23,6 +23,25 @@ DEMOGRAPHIC_COLS: list[str] = ["median_income", "pct_over_65", "pct_under_5"]
 
 STAC_URL = "https://planetarycomputer.microsoft.com/api/stac/v1"
 
+# ESA WorldCover class -> "plantable" weight: how much of a pixel of this class could
+# realistically take new tree canopy. Grass/shrub/crop/bare take trees outright; built-up
+# gets a small street-pit/depaving credit; existing tree cover (10) offers no ADDITIONAL
+# room (its cooling is already in the observed LST); water/ice/wetland/moss take none.
+LANDCOVER_TREE_CLASS = 10
+PLANTABLE_CLASS_WEIGHTS: dict[int, float] = {
+    10: 0.0,   # tree cover (already canopy)
+    20: 1.0,   # shrubland
+    30: 1.0,   # grassland
+    40: 1.0,   # cropland
+    50: 0.15,  # built-up (tree pits / depaving potential only)
+    60: 1.0,   # bare / sparse vegetation
+    70: 0.0,   # snow & ice
+    80: 0.0,   # permanent water
+    90: 0.0,   # herbaceous wetland
+    95: 0.0,   # mangroves
+    100: 0.0,  # moss & lichen
+}
+
 
 @dataclass
 class PipelineConfig:
@@ -37,6 +56,7 @@ class PipelineConfig:
     s2_max_scenes: int = 24
     raster_res_deg: float = 0.00027   # ~30 m at the equator (Landsat / DEM load grid)
     s2_res_deg: float = 0.00018       # ~20 m (Sentinel-2 load grid)
+    landcover_res_deg: float = 0.0001  # ~11 m (ESA WorldCover native is 1/12000 deg)
     bbox_pad_deg: float = 0.005
 
     # OSM

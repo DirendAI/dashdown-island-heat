@@ -168,6 +168,7 @@ zero → raise `DataUnavailableError` naming the collection and windows tried.
 def fetch_lst_per_hex(boundary, cfg) -> pd.DataFrame        # h3, mean_lst_c
 def fetch_s2_indices_per_hex(boundary, cfg) -> pd.DataFrame # h3, ndvi, ndbi, ndwi, albedo
 def fetch_elevation_per_hex(boundary, cfg) -> pd.DataFrame  # h3, elevation
+def fetch_landcover_per_hex(boundary, cfg) -> pd.DataFrame  # h3, plantable_fraction, tree_fraction
 ```
 
 **Landsat LST** (`fetch_lst_per_hex`):
@@ -199,9 +200,20 @@ def fetch_elevation_per_hex(boundary, cfg) -> pd.DataFrame  # h3, elevation
 filter/time filter (it's static; search without datetime). Median over items if several tiles
 overlap, else squeeze. Aggregate mean per hex.
 
-All three: write parquet cache `lst_res{r}.parquet` / `s2_res{r}.parquet` /
-`dem_res{r}.parquet`; on hit, read and return immediately (log "cache hit").
-Wrap `search().item_collection()` and `.compute()` in `retry_call`.
+**Land cover** (`fetch_landcover_per_hex`): ESA WorldCover, collection `esa-worldcover`,
+asset `map` (categorical 10 m map, class codes 10..100), static — no cloud/datetime filter,
+but if the search returns multiple product versions keep only the items of the LATEST
+version (property `esa_worldcover:product_version`; fall back to latest item datetime).
+Load at `cfg.landcover_res_deg` in EPSG:4326; class 0 / nodata → NaN. Map classes to values
+**per time/tile slice first**, then median-composite, then hex-mean (never take a median of
+raw categorical codes): `plantable = config.PLANTABLE_CLASS_WEIGHTS[class]` (vectorized
+lookup; unknown classes → 0.0) and `tree = (class == config.LANDCOVER_TREE_CLASS)`.
+`plantable_fraction` = hex mean of plantable weights ∈ [0, 1]; `tree_fraction` = hex mean of
+the tree indicator ∈ [0, 1].
+
+All four: write parquet cache `lst_res{r}.parquet` / `s2_res{r}.parquet` /
+`dem_res{r}.parquet` / `landcover_res{r}.parquet`; on hit, read and return immediately
+(log "cache hit"). Wrap `search().item_collection()` and `.compute()` in `retry_call`.
 
 ## osm_features.py
 
@@ -265,14 +277,19 @@ def fetch_demographics_per_hex(boundary, hex_gdf, cfg, *, fetch_json=_fetch_json
 def build_feature_table(boundary, cfg) -> gpd.GeoDataFrame
 ```
 - Canonical grid = `polygon_to_hexes(boundary.geometry, cfg.h3_resolution)` → `hexes_to_gdf`.
-- Left-join satellite (LST, S2, DEM), OSM, demographics frames onto the grid by `h3`.
+- Left-join satellite (LST, S2, DEM, land cover), OSM, demographics frames onto the grid by `h3`.
 - Drop hexes with NaN `mean_lst_c` **or** NaN `ndvi` (satellite coverage gaps) — log the count.
 - Fills: `elevation` → city median; `dist_water_m`/`dist_park_m` → `cfg.dist_cap_m`;
   `building_density`/`road_density` → 0; `ndbi`/`ndwi`/`albedo` → city median.
+  `plantable_fraction`/`tree_fraction`: per-row NaN → city median; if the land-cover fetch
+  failed entirely (columns absent) → plantable 1.0 (unconstrained legacy) / tree 0.0 + WARNING.
   Demographics stay NaN (nullable). `is_park` → False.
 - Enforce `cfg.min_hexes` (else `PipelineError`: city too small / no coverage).
 - Returns GeoDataFrame with: h3, lat, lon, geometry, is_park, all 9 model features
-  (`config.FEATURES` order), mean_lst_c, and the 3 demographic columns.
+  (`config.FEATURES` order), plantable_fraction, tree_fraction, mean_lst_c, and the 3
+  demographic columns. (`plantable_fraction`/`tree_fraction` are intervention-layer inputs,
+  deliberately NOT in `FEATURES`: tree cover's thermal effect is already carried by NDVI, and
+  keeping FEATURES stable keeps SHAP comparable across versions.)
 
 ## model.py
 
@@ -287,6 +304,8 @@ class ModelResult:
     mae: float                    # out-of-fold MAE (°C)
     n_train: int
     shap_importance: dict[str, float]   # feature -> mean |SHAP|
+    fold_models: list             # the k models trained on CV folds (fold order) —
+                                  # kept so simulate.py can spread the cooling estimate
 
 def train_and_evaluate(df: pd.DataFrame, cfg: PipelineConfig) -> ModelResult
 ```
@@ -311,11 +330,20 @@ def greening_target_ndvi(df, cfg) -> float
     # else 90th percentile of all ndvi (fallback, log it).
     # An absent is_park column counts as zero park hexes (fallback path, no crash).
 
-def run_greening(df, model, cfg) -> pd.DataFrame   # adds predicted_lst_c, predicted_cooling_c
+def run_greening(df, model, cfg, fold_models=None) -> pd.DataFrame
+    # adds predicted_lst_c, predicted_cooling_c, cooling_uncertainty_c
 ```
 - `predicted_lst_c = model.predict(X)` (observed features).
-- Counterfactual: copy X, `ndvi_cf = max(ndvi, target)` (never lower a hex's NDVI!),
-  `predicted_cooling_c = clip(predicted_lst_c - model.predict(X_cf), 0, None)`.
+- **Plantability-constrained counterfactual**: a hex can only close the gap to the greening
+  target in proportion to its plantable share:
+  `gap = clip(target - ndvi, 0, None)`; `ndvi_cf = ndvi + plantable_fraction * gap`
+  (never lowers NDVI; plantable 0 — water, solid canopy — → no change → zero cooling; a
+  missing `plantable_fraction` column → 1.0 = the old unconstrained behaviour, with WARNING;
+  per-row NaN plantable → 1.0 for that row). `predicted_cooling_c = clip(predicted_lst_c -
+  model.predict(X_cf), 0, None)`.
+- **Uncertainty**: `cooling_uncertainty_c` = std across `fold_models` of
+  `(model_i.predict(X) - model_i.predict(X_cf))` (unclipped deltas — the honest spread of
+  the spatial-CV ensemble). `fold_models` None/empty → NaN column.
 
 ```python
 def compute_priority(df) -> pd.DataFrame           # adds priority_score in [0, 1]
@@ -327,6 +355,9 @@ def compute_priority(df) -> pd.DataFrame           # adds priority_score in [0, 
   (ranks pct=True within city); vulnerability = 0.5 + 0.5·v_raw ∈ [0.5, 1].
 - `raw = heat_rank * cooling_norm * vulnerability`; `priority_score = raw / raw.max()`
   (max 0 → all zeros). Guaranteed within [0, 1].
+- Deliberately **no** separate plantability multiplier here: feasibility already enters
+  through the constrained cooling (a zero-plantable hex has zero cooling and hence zero
+  priority); multiplying by `plantable_fraction` again would double-penalize dense cores.
 
 ## db.py (dashboard contract — EXACT schema)
 
@@ -339,8 +370,10 @@ CREATE TABLE IF NOT EXISTS hexes(
   mean_lst_c DOUBLE, ndvi DOUBLE, ndbi DOUBLE, ndwi DOUBLE, albedo DOUBLE,
   elevation DOUBLE, building_density DOUBLE, road_density DOUBLE,
   dist_water_m DOUBLE, dist_park_m DOUBLE,
+  plantable_fraction DOUBLE, tree_fraction DOUBLE,
   median_income DOUBLE, pct_over_65 DOUBLE, pct_under_5 DOUBLE,
-  predicted_lst_c DOUBLE, predicted_cooling_c DOUBLE, priority_score DOUBLE,
+  predicted_lst_c DOUBLE, predicted_cooling_c DOUBLE, cooling_uncertainty_c DOUBLE,
+  priority_score DOUBLE,
   PRIMARY KEY (city_id, h3));
 CREATE TABLE IF NOT EXISTS model_metrics(
   city_id TEXT PRIMARY KEY, r2 DOUBLE, mae DOUBLE, n_train INTEGER, trained_at TIMESTAMP);
