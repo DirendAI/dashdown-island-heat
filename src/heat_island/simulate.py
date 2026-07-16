@@ -50,13 +50,28 @@ def greening_target_ndvi(df: pd.DataFrame, cfg: PipelineConfig) -> float:
     return target
 
 
-def run_greening(df: pd.DataFrame, model, cfg: PipelineConfig) -> pd.DataFrame:
-    """Add `predicted_lst_c` and `predicted_cooling_c` from a greening counterfactual.
+def run_greening(df: pd.DataFrame, model, cfg: PipelineConfig, fold_models=None) -> pd.DataFrame:
+    """Add `predicted_lst_c`, `predicted_cooling_c`, `cooling_uncertainty_c` from a
+    plantability-constrained greening counterfactual.
 
     predicted_lst_c: model prediction on the hex's observed features.
-    predicted_cooling_c: predicted drop in LST if the hex's NDVI were raised to
-    `greening_target_ndvi(df, cfg)` (never lowered — a hex already greener than the target
-    keeps its own NDVI), clipped at 0 so "greening" can never predict warming.
+
+    Plantability-constrained counterfactual: a hex can only close the gap to the greening
+    target (`greening_target_ndvi(df, cfg)`) in proportion to its plantable share.
+    `gap = clip(target - ndvi, 0, None)` (never asks a hex to green past the target);
+    `plantable_fraction` (0-1) scales how much of that gap is achievable — a hex with 0
+    plantable share (water, solid existing canopy) gets `ndvi_cf == ndvi` (no change, hence
+    zero cooling); a fully plantable hex reproduces the old unconstrained `max(ndvi, target)`
+    behaviour. A `plantable_fraction` column absent entirely -> 1.0 everywhere (legacy
+    unconstrained behaviour), logged as a WARNING; a per-row NaN within an existing column ->
+    1.0 for that row only (no column-level warning, ARCHITECTURE.md's fillna leniency).
+    `predicted_cooling_c` is the resulting drop in predicted LST, clipped at 0 so "greening"
+    can never predict warming.
+
+    cooling_uncertainty_c: the honest spread of the constrained-cooling estimate across the
+    spatial-CV fold models (`fold_models`, from `ModelResult.fold_models`) — the std (ddof=0)
+    of each fold model's *unclipped* `predict(X) - predict(X_cf)` delta. `fold_models` being
+    None/empty (e.g. a caller that didn't keep them around) -> NaN column, not an error.
     """
     out = df.copy()
     target = greening_target_ndvi(df, cfg)
@@ -64,8 +79,22 @@ def run_greening(df: pd.DataFrame, model, cfg: PipelineConfig) -> pd.DataFrame:
     X = out[FEATURES]
     predicted_lst_c = model.predict(X)
 
+    ndvi = out["ndvi"]
+    gap = np.clip(target - ndvi, 0, None)
+
+    if "plantable_fraction" in out.columns:
+        plantable = out["plantable_fraction"].fillna(1.0)
+    else:
+        log.warning(
+            "run_greening: 'plantable_fraction' column absent — treating every hex as fully "
+            "plantable (unconstrained greening, matches pre-plantability behaviour)"
+        )
+        plantable = pd.Series(1.0, index=out.index)
+
+    ndvi_cf = ndvi + plantable * gap
+
     X_cf = X.copy()
-    X_cf["ndvi"] = np.maximum(X_cf["ndvi"], target)
+    X_cf["ndvi"] = ndvi_cf
     predicted_lst_cf = model.predict(X_cf)
 
     predicted_cooling_c = np.clip(predicted_lst_c - predicted_lst_cf, 0, None)
@@ -73,9 +102,24 @@ def run_greening(df: pd.DataFrame, model, cfg: PipelineConfig) -> pd.DataFrame:
     out["predicted_lst_c"] = predicted_lst_c
     out["predicted_cooling_c"] = predicted_cooling_c
 
+    if fold_models:
+        fold_deltas = np.stack(
+            [np.asarray(fm.predict(X)) - np.asarray(fm.predict(X_cf)) for fm in fold_models],
+            axis=0,
+        )
+        cooling_uncertainty_c = np.std(fold_deltas, axis=0, ddof=0)
+        mean_uncertainty = float(np.mean(cooling_uncertainty_c))
+    else:
+        cooling_uncertainty_c = np.full(len(out), np.nan)
+        mean_uncertainty = float("nan")
+
+    out["cooling_uncertainty_c"] = cooling_uncertainty_c
+
     log.info(
-        "run_greening: target NDVI=%.3f | predicted cooling max=%.2f°C mean=%.2f°C",
+        "run_greening: target NDVI=%.3f | predicted cooling max=%.2f°C mean=%.2f°C | "
+        "cooling_uncertainty_c mean=%.3f°C (%d fold models)",
         target, float(np.max(predicted_cooling_c)), float(np.mean(predicted_cooling_c)),
+        mean_uncertainty, len(fold_models) if fold_models else 0,
     )
     return out
 
@@ -120,6 +164,10 @@ def compute_priority(df: pd.DataFrame) -> pd.DataFrame:
         all_missing = out[present_demo_cols].isna().all(axis=1)
         vulnerability[all_missing] = 1.0
 
+    # Deliberately no separate plantability multiplier here: feasibility already enters through
+    # the plantability-constrained cooling computed in run_greening (a zero-plantable hex has
+    # zero predicted_cooling_c and therefore zero cooling_norm here); multiplying by
+    # plantable_fraction again would double-penalize it.
     raw = heat_rank * cooling_norm * vulnerability
     raw_max = raw.max()
     if raw_max == 0:

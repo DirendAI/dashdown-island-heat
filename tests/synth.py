@@ -34,12 +34,20 @@ def make_city(
     seed: int = 42,
     ndvi_scale: float = 0.8,
     with_demographics: bool = False,
+    with_plantable: bool = False,
 ) -> pd.DataFrame:
     """~n_lat * n_lon synthetic H3 hexes with plausible features and a known-structure LST target.
 
     Columns: h3, lat, lon, config.FEATURES (ndvi, ndbi, ndwi, albedo, elevation,
     building_density, road_density, dist_water_m, dist_park_m), mean_lst_c, is_park, and
     (when with_demographics=True) median_income, pct_over_65, pct_under_5.
+
+    with_plantable=True (default False, so existing callers are unaffected) additionally adds
+    `plantable_fraction = clip(1.2 - ndbi - building_density, 0, 1)`: dense/built-up hexes
+    (high ndbi + building_density) saturate at 0, open low-density hexes saturate at 1, and
+    plenty of hexes land strictly in between — exercising all three plantability regimes in
+    simulate.py's constrained counterfactual. Computed purely from already-drawn columns, so
+    it does not consume extra RNG draws and never perturbs any other column's values.
 
     NDVI is a smooth-ish spatial pattern (sin/cos of grid indices) plus noise, so nearby hexes
     have correlated features/target — this matters for spatial-CV tests. `ndvi_scale` controls
@@ -110,5 +118,8 @@ def make_city(
         df["median_income"] = rng.uniform(25_000.0, 120_000.0, n)
         df["pct_over_65"] = rng.uniform(5.0, 25.0, n)
         df["pct_under_5"] = rng.uniform(3.0, 12.0, n)
+
+    if with_plantable:
+        df["plantable_fraction"] = np.clip(1.2 - ndbi - building_density, 0.0, 1.0)
 
     return df

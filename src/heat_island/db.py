@@ -59,8 +59,10 @@ CREATE TABLE IF NOT EXISTS hexes(
   mean_lst_c DOUBLE, ndvi DOUBLE, ndbi DOUBLE, ndwi DOUBLE, albedo DOUBLE,
   elevation DOUBLE, building_density DOUBLE, road_density DOUBLE,
   dist_water_m DOUBLE, dist_park_m DOUBLE,
+  plantable_fraction DOUBLE, tree_fraction DOUBLE,
   median_income DOUBLE, pct_over_65 DOUBLE, pct_under_5 DOUBLE,
-  predicted_lst_c DOUBLE, predicted_cooling_c DOUBLE, priority_score DOUBLE,
+  predicted_lst_c DOUBLE, predicted_cooling_c DOUBLE, cooling_uncertainty_c DOUBLE,
+  priority_score DOUBLE,
   PRIMARY KEY (city_id, h3));
 """
 
@@ -74,7 +76,7 @@ CREATE TABLE IF NOT EXISTS feature_importance(
   city_id TEXT, feature TEXT, mean_abs_shap DOUBLE, PRIMARY KEY (city_id, feature));
 """
 
-# Exact hexes-table column order (21 columns) — also the column order used for the
+# Exact hexes-table column order (24 columns) — also the column order used for the
 # DataFrame we register with duckdb before INSERT INTO hexes SELECT ... FROM df.
 HEX_COLUMNS: list[str] = [
     "city_id",
@@ -92,16 +94,19 @@ HEX_COLUMNS: list[str] = [
     "road_density",
     "dist_water_m",
     "dist_park_m",
+    "plantable_fraction",
+    "tree_fraction",
     "median_income",
     "pct_over_65",
     "pct_under_5",
     "predicted_lst_c",
     "predicted_cooling_c",
+    "cooling_uncertainty_c",
     "priority_score",
 ]
 
 # Rounding policy for the numeric hexes columns ("round floats sensibly" per ARCHITECTURE.md).
-_ROUND_4DP = ("ndvi", "ndbi", "ndwi", "albedo", "priority_score")
+_ROUND_4DP = ("ndvi", "ndbi", "ndwi", "albedo", "plantable_fraction", "tree_fraction", "priority_score")
 _ROUND_2DP = (
     "mean_lst_c",
     "elevation",
@@ -111,6 +116,7 @@ _ROUND_2DP = (
     "dist_park_m",
     "predicted_lst_c",
     "predicted_cooling_c",
+    "cooling_uncertainty_c",
     # pct_over_65 / pct_under_5 aren't called out explicitly in the contract; treated as
     # 2dp like the other percent/measurement columns rather than left unrounded.
     "pct_over_65",

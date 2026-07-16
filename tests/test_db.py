@@ -36,11 +36,14 @@ HEXES_COLUMNS = [
     "road_density",
     "dist_water_m",
     "dist_park_m",
+    "plantable_fraction",
+    "tree_fraction",
     "median_income",
     "pct_over_65",
     "pct_under_5",
     "predicted_lst_c",
     "predicted_cooling_c",
+    "cooling_uncertainty_c",
     "priority_score",
 ]
 MODEL_METRICS_COLUMNS = ["city_id", "r2", "mae", "n_train", "trained_at"]
@@ -71,11 +74,20 @@ def make_hex_df(
     city_lat: float = 51.0543,
     city_lon: float = 3.7174,
     with_demographics: bool = True,
+    with_plantability: bool = True,
 ) -> pd.DataFrame:
     """~n synthetic hex rows: unique h3-like strings, shapely box geometries, plausible values.
 
     Demographics present for half the rows (even i) and NaN for the other half (odd i) when
     with_demographics=True; columns omitted entirely when False.
+
+    plantable_fraction/tree_fraction/cooling_uncertainty_c present with plausible values when
+    with_plantability=True (default), but NaN on a subset of rows (i % 4 == 0 for the land-cover
+    pair, i % 3 == 0 for the uncertainty column -- deliberately different, overlapping-but-not-
+    identical patterns from the demographics i % 2 one) to prove the per-row NULL path
+    independently of both the whole-column-missing case and the demographics NaN pattern;
+    columns omitted entirely when with_plantability=False (exercises the "whole column absent ->
+    NULL" duck-typed leniency, same as demographics).
     """
     rng = np.random.default_rng(seed)
     rows = []
@@ -102,6 +114,10 @@ def make_hex_df(
             predicted_cooling_c=rng.uniform(0, 3),
             priority_score=rng.uniform(0, 1),
         )
+        if with_plantability:
+            row["plantable_fraction"] = np.nan if i % 4 == 0 else float(rng.uniform(0.0, 1.0))
+            row["tree_fraction"] = np.nan if i % 4 == 0 else float(rng.uniform(0.0, 1.0))
+            row["cooling_uncertainty_c"] = np.nan if i % 3 == 0 else float(rng.uniform(0.0, 1.5))
         if with_demographics:
             if i % 2 == 0:
                 row["median_income"] = float(rng.uniform(20000, 95000))
@@ -172,7 +188,7 @@ def test_schema_contract(tmp_path):
     try:
         assert _columns(con, "cities") == CITIES_COLUMNS
         assert _columns(con, "hexes") == HEXES_COLUMNS
-        assert len(HEXES_COLUMNS) == 21
+        assert len(HEXES_COLUMNS) == 24
         assert _columns(con, "model_metrics") == MODEL_METRICS_COLUMNS
         assert _columns(con, "feature_importance") == FEATURE_IMPORTANCE_COLUMNS
     finally:
@@ -228,6 +244,33 @@ def test_upsert_roundtrip(tmp_path):
         assert odd_income is None
         odd_pct65 = con.execute("SELECT pct_over_65 FROM hexes WHERE h3 = ?", ["h3-0001"]).fetchone()[0]
         assert odd_pct65 is None
+
+        # spot check plantable_fraction (4dp) / cooling_uncertainty_c (2dp) rounding on a row
+        # where the synthetic helper's NaN pattern (i % 4 == 0, i % 3 == 0) doesn't apply
+        # (h3-0001 -> i=1)
+        expected_plantable = round(
+            float(hex_df.loc[hex_df["h3"] == "h3-0001", "plantable_fraction"].iloc[0]), 4
+        )
+        expected_uncertainty = round(
+            float(hex_df.loc[hex_df["h3"] == "h3-0001", "cooling_uncertainty_c"].iloc[0]), 2
+        )
+        got_plantable, got_uncertainty = con.execute(
+            "SELECT plantable_fraction, cooling_uncertainty_c FROM hexes WHERE h3 = ?", ["h3-0001"]
+        ).fetchone()
+        assert got_plantable == pytest.approx(expected_plantable)
+        assert got_uncertainty == pytest.approx(expected_uncertainty)
+
+        # per-row NaN -> NULL: h3-0000 (i=0) hits both the i%4==0 and i%3==0 NaN patterns, so
+        # plantable_fraction/tree_fraction/cooling_uncertainty_c are all NULL for that one row
+        # even though the columns themselves are present (unlike the whole-column-absent case
+        # covered separately below).
+        null_plantable, null_tree, null_uncertainty = con.execute(
+            "SELECT plantable_fraction, tree_fraction, cooling_uncertainty_c FROM hexes WHERE h3 = ?",
+            ["h3-0000"],
+        ).fetchone()
+        assert null_plantable is None
+        assert null_tree is None
+        assert null_uncertainty is None
 
         # model metrics + feature importance content
         r2, mae, n_train = con.execute(
@@ -365,6 +408,33 @@ def test_missing_demographic_columns(tmp_path):
         n_null = con.execute(
             "SELECT COUNT(*) FROM hexes "
             "WHERE median_income IS NULL AND pct_over_65 IS NULL AND pct_under_5 IS NULL"
+        ).fetchone()[0]
+        assert n_null == N_HEXES
+    finally:
+        con.close()
+
+
+def test_missing_plantability_and_uncertainty_columns(tmp_path):
+    """hex_df WITHOUT plantable_fraction/tree_fraction/cooling_uncertainty_c -> NULLs stored.
+
+    Same duck-typed leniency as demographics (ARCHITECTURE.md): a caller that hasn't run the
+    land-cover fetch or doesn't have fold models around yet can still upsert.
+    """
+    db_path = tmp_path / "heat.duckdb"
+    hex_df = make_hex_df(with_plantability=False)
+    for col in ("plantable_fraction", "tree_fraction", "cooling_uncertainty_c"):
+        assert col not in hex_df.columns
+    boundary = make_boundary()
+    metrics = make_metrics()
+
+    db.upsert_city(db_path, boundary, hex_df, metrics)
+
+    con = duckdb.connect(str(db_path))
+    try:
+        assert _count(con, "hexes") == N_HEXES
+        n_null = con.execute(
+            "SELECT COUNT(*) FROM hexes "
+            "WHERE plantable_fraction IS NULL AND tree_fraction IS NULL AND cooling_uncertainty_c IS NULL"
         ).fetchone()[0]
         assert n_null == N_HEXES
     finally:

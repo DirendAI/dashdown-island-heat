@@ -12,7 +12,7 @@ by another agent). The one thing model.py needs from it — mapping each hex to 
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import h3
 import lightgbm as lgb
@@ -37,6 +37,8 @@ class ModelResult:
     mae: float  # out-of-fold MAE (°C)
     n_train: int
     shap_importance: dict[str, float]  # feature -> mean |SHAP|, in config.FEATURES order
+    fold_models: list = field(default_factory=list)  # the k models trained on CV folds (fold
+    # order) — kept so simulate.py can spread the greening-cooling estimate into an uncertainty
 
 
 def _lgb_params(cfg: PipelineConfig) -> dict:
@@ -111,10 +113,12 @@ def train_and_evaluate(df: pd.DataFrame, cfg: PipelineConfig) -> ModelResult:
 
     params = _lgb_params(cfg)
     oof_pred = np.full(n_train, np.nan)
+    fold_models: list = []
     for train_idx, test_idx in splits:
         fold_model = lgb.LGBMRegressor(**params)
         fold_model.fit(X.iloc[train_idx], y.iloc[train_idx])
         oof_pred[test_idx] = fold_model.predict(X.iloc[test_idx])
+        fold_models.append(fold_model)
 
     covered = ~np.isnan(oof_pred)
     if not covered.all():
@@ -143,4 +147,5 @@ def train_and_evaluate(df: pd.DataFrame, cfg: PipelineConfig) -> ModelResult:
         mae=mae,
         n_train=n_train,
         shap_importance=shap_importance,
+        fold_models=fold_models,
     )
