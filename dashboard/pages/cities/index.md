@@ -22,4 +22,4 @@ export. Click a row:
 <Table data={cities_dir} row_link="/cities/{city_id}" title="Cities in data/heat.duckdb" />
 
 To add a city, run `uv run heat-island add-city "<city>"` from the repository
-root, then rebuild the static site (`dashdown build dashboard --out site`).
+root, then rebuild the static site (`cd dashboard && dashdown build . --out ../site`).

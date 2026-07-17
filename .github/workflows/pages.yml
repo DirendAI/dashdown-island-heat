@@ -1,7 +1,8 @@
 # Builds the dashboard's static export in CI and publishes it to GitHub Pages.
 #
-# The build runs `dashdown build dashboard --out site` against the committed
-# data/heat.duckdb. With the MISTRAL_API_KEY repo secret set, the build also
+# The build runs `dashdown build` from inside dashboard/ against the committed
+# data/heat.duckdb. (It must run from the project dir: the sources.yaml duckdb
+# path ../data/heat.duckdb resolves relative to the working directory.) With the MISTRAL_API_KEY repo secret set, the build also
 # bakes the AI commentary (<Ask> blocks and chart `explain` footers) into the
 # export; without it the site still builds — AI cards show a muted
 # "commentary not available" note instead (never a build failure).
@@ -47,7 +48,7 @@ jobs:
         run: pipx install 'dashdown-md[mistral]'
 
       - name: Build static site (bakes query snapshots + AI commentary)
-        run: dashdown build dashboard --out site
+        run: cd dashboard && dashdown build . --out ../site
         env:
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
 
