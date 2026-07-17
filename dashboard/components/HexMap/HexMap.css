@@ -1,0 +1,79 @@
+/* HexMap — card chrome + gradient legend footer. Colours use DaisyUI theme
+   tokens (--bc base-content, --b3 base-300) so the component follows light/dark
+   automatically, matching the built-in chart cards. */
+
+.hexmap {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.hexmap-title {
+  padding: 0.7rem 1rem 0.15rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: oklch(var(--bc) / 0.92);
+}
+
+.hexmap-region {
+  position: relative;
+  width: 100%;
+  /* height is set inline (the `height=` attr) */
+  touch-action: none; /* let pinch-zoom / drag-pan reach ECharts on touch */
+}
+
+/* Gradient legend strip: min → ramp → max, with the value unit on each end. */
+.hexmap-legend {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 1rem 0.7rem;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  color: oklch(var(--bc) / 0.62);
+}
+
+.hexmap-legend:empty {
+  display: none;
+}
+
+.hexmap-legend-bar {
+  flex: 1 1 auto;
+  height: 0.5rem;
+  border-radius: 9999px;
+  border: 1px solid oklch(var(--bc) / 0.14);
+}
+
+.hexmap-legend-label {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* Inline fetch/parse error note — never a thrown, blank card. */
+.hexmap-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 1rem;
+  font-size: 0.85rem;
+  text-align: center;
+  color: oklch(var(--bc) / 0.6);
+}
+
+.hexmap-error::before {
+  content: "\26A0\FE0E"; /* warning sign, text style */
+  margin-right: 0.4rem;
+  opacity: 0.8;
+}
+
+/* Tooltip content emitted by HexMap.js (inside ECharts' tooltip box). */
+.hexmap-tt-id {
+  font-weight: 600;
+  margin-bottom: 0.15rem;
+}
+
+.hexmap-tt-extra {
+  opacity: 0.85;
+}

@@ -57,6 +57,9 @@ filter bar; every page re-queries for it.
 <Counter data={model_r2} column="r2" format="number" decimals=3 label="Model R² (spatial CV)" />
 </Grid>
 
+<Ask data={kpis,model_r2} label="AI read-out" refresh=false cache_ttl=86400
+  ask="In two short paragraphs: how severe is this city's heat island (hottest hex vs city mean), how green and plantable is it, and how trustworthy is the model (R²)? Plain language, no bullet lists." />
+
 ## How it works
 
 **Land-surface temperature (LST)** is a Landsat thermal composite averaged over

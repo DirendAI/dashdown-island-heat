@@ -10,39 +10,19 @@ SELECT name FROM cities ORDER BY name
 ```
 
 ```sql prio_map
-SELECT
-  lon, lat, priority_score,
-  CASE NTILE(5) OVER (ORDER BY priority_score)
-    WHEN 1 THEN 'lowest 20%'
-    WHEN 2 THEN 'low 20%'
-    WHEN 3 THEN 'moderate 20%'
-    WHEN 4 THEN 'high 20%'
-    WHEN 5 THEN 'highest 20%'
-  END AS band
+SELECT h3, geometry_wkt, priority_score, predicted_cooling_c, plantable_fraction
 FROM hexes h
 WHERE h.city_id = COALESCE(
   (SELECT MIN(city_id) FROM cities WHERE name = '${city}'),
   (SELECT MIN(city_id) FROM cities))
--- Final ORDER BY = legend color order (lowest→highest onto blue→red). Keep it.
-ORDER BY priority_score
 ```
 
 ```sql plantable_map
-SELECT
-  lon, lat, plantable_fraction,
-  CASE NTILE(5) OVER (ORDER BY plantable_fraction)
-    WHEN 1 THEN 'least plantable 20%'
-    WHEN 2 THEN 'low 20%'
-    WHEN 3 THEN 'moderate 20%'
-    WHEN 4 THEN 'high 20%'
-    WHEN 5 THEN 'most plantable 20%'
-  END AS band
+SELECT h3, geometry_wkt, plantable_fraction, tree_fraction
 FROM hexes h
 WHERE h.city_id = COALESCE(
   (SELECT MIN(city_id) FROM cities WHERE name = '${city}'),
   (SELECT MIN(city_id) FROM cities))
--- Final ORDER BY = legend color order (least→most plantable onto grey→green). Keep it.
-ORDER BY plantable_fraction
 ```
 
 ```sql top25
@@ -100,25 +80,25 @@ fold models.
 
 ## Priority map
 
-Hex centroids coloured by **priority quintile**, low **blue** → highest **red**.
-Red clusters are the first places to send crews.
+Hexes drawn at their true footprint and filled by a **continuous** priority
+gradient, low **blue** → orange → highest **red**. Red clusters are the first
+places to send crews. **Scroll to zoom, drag to pan**; hover a hex for its
+predicted cooling and plantable share.
 
-<ScatterChart data={prio_map} x="lon" y="lat" series="band"
-  color="#4c78a8,#6cc5b0,#f2cf5b,#f58518,#e45756"
-  height=520 title="Planting priority by hex (quintile bands)" />
+<HexMap data={prio_map} value="priority_score" scheme="priority"
+  title="Planting priority by hex" height=520 tooltip="predicted_cooling_c,plantable_fraction" />
 
 ## Where trees can go
 
-Hex centroids coloured by **plantable-space quintile** — the share of each
-hex's land cover (ESA WorldCover, 10 m) that could physically take new canopy.
-Grass, shrub, cropland and bare ground count fully; built-up land earns a
-small **street-pit / depaving credit** (0.15); water and existing forest count
-zero — there's nowhere left to plant. Grey hexes have little room left; dark
-green hexes are the most open canvas.
+The same hexes filled by **plantable-space share** — how much of each hex's land
+cover (ESA WorldCover, 10 m) could physically take new canopy. Grass, shrub,
+cropland and bare ground count fully; built-up land earns a small **street-pit /
+depaving credit** (0.15); water and existing forest count zero — there's nowhere
+left to plant. Brown hexes have little room left; **dark green** hexes are the
+most open canvas. Hover for each hex's existing canopy (`tree_fraction`).
 
-<ScatterChart data={plantable_map} x="lon" y="lat" series="band"
-  color="#bdbdbd,#c7e9c0,#a1d99b,#41ab5d,#006d2c"
-  height=520 title="Plantable land share by hex (quintile bands)" />
+<HexMap data={plantable_map} value="plantable_fraction" scheme="greens"
+  title="Plantable land share by hex" height=520 tooltip="tree_fraction" />
 
 ## Biggest single win
 
@@ -139,3 +119,6 @@ the 5 spatial-CV fold models. `tree_fraction` is existing canopy share;
 `plantable_fraction` is how much of the hex could still take new trees.
 
 <Table data={top25} title="Highest-priority hexes" />
+
+<Ask data={top25,max_cooling} label="Where to plant first" refresh=false cache_ttl=86400
+  ask="Summarize where the highest-priority hexes cluster and what they have in common (LST, NDVI, plantable share). End with the single biggest achievable cooling win. Three sentences." />

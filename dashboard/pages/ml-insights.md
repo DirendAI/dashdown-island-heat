@@ -65,7 +65,10 @@ predicted temperature, on average. Built-up density (**NDBI**) and building
 density dominate; vegetation and water proximity pull the other way.
 
 <BarChart data={feat_imp} x="feature" y="mean_abs_shap" horizontal height=380
-  title="Feature importance (mean |SHAP|, °C)" />
+  title="Feature importance (mean |SHAP|, °C)" explain />
+
+<Ask data={feat_imp,metrics} label="What drives the heat" refresh=false cache_ttl=86400
+  ask="Explain in plain language which surface properties drive land-surface temperature here, referencing the SHAP ranking, and how reliable the model is." />
 
 ## Predicted vs observed
 
@@ -74,7 +77,7 @@ y-axis. A perfect model would sit on the **1:1 line** — points hug it here, an
 the vertical scatter around it is the residual error (the ~1 °C MAE above).
 
 <ScatterChart data={pred_vs_actual} x="mean_lst_c" y="predicted_lst_c"
-  height=440 title="Predicted vs observed LST (°C)" />
+  height=440 title="Predicted vs observed LST (°C)" explain />
 
 ## Why spatial CV matters
 
