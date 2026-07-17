@@ -412,6 +412,22 @@ heat-island preview "Ghent, Belgium" [--resolution 9] [--out out/ghent.png]   # 
 - `preview`: boundary + grid + `viz.plot_city_grid` + print `grid_stats` (n_hexes, area).
 - Friendly failure: catch `PipelineError` → red message, exit 1 (no traceback spam).
 
+## v0.3 additions (zoomable maps + AI commentary)
+
+- **`dashboard/components/HexMap/`** (custom Dashdown component, see
+  `.references/extending.md`): draws the real H3 polygon geometries
+  (`geometry_wkt` from the map queries) as an ECharts custom series with
+  inside-type dataZoom (wheel-zoom + drag-pan), lon·cos(lat) aspect correction,
+  3-stop color ramps (`scheme="heat"|"greens"|"priority"`), gradient legend,
+  theme/resize/filter-change handling copied from chart.js's patterns.
+  Map queries return `h3, geometry_wkt, <value>[, tooltip cols]` — no NTILE bands.
+- **AI layer**: `llm: {provider: mistral, api_key: ${MISTRAL_API_KEY}}` in
+  `dashdown.yaml`; `<Ask>` narrative blocks + `explain` on built-in charts.
+  Keyless = graceful muted notes everywhere (serve and build).
+- **CI-built Pages**: `data/heat.duckdb` is committed (5.8 MB); the Pages
+  workflow installs `dashdown-md[mistral]`, builds with the `MISTRAL_API_KEY`
+  secret (bakes commentary), and deploys — `site/` is no longer committed.
+
 ## Dashboard (wave 3 — see dashboard/AGENTS.md when scaffolded)
 
 Reads `data/heat.duckdb` via `sources.yaml`. Every page: city dropdown fed by

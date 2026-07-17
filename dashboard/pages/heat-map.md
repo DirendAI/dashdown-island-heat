@@ -10,40 +10,19 @@ SELECT name FROM cities ORDER BY name
 ```
 
 ```sql lst_map
-SELECT
-  lon, lat, mean_lst_c,
-  CASE NTILE(5) OVER (ORDER BY mean_lst_c)
-    WHEN 1 THEN 'coolest 20%'
-    WHEN 2 THEN 'cool 20%'
-    WHEN 3 THEN 'moderate 20%'
-    WHEN 4 THEN 'warm 20%'
-    WHEN 5 THEN 'hottest 20%'
-  END AS band
+SELECT h3, geometry_wkt, mean_lst_c, ndvi, priority_score
 FROM hexes h
 WHERE h.city_id = COALESCE(
   (SELECT MIN(city_id) FROM cities WHERE name = '${city}'),
   (SELECT MIN(city_id) FROM cities))
--- The final ORDER BY drives the series first-seen order = legend color order
--- (coolest→hottest maps onto the blue→red ramp). Do not remove it.
-ORDER BY mean_lst_c
 ```
 
 ```sql ndvi_map
-SELECT
-  lon, lat, ndvi,
-  CASE NTILE(5) OVER (ORDER BY ndvi)
-    WHEN 1 THEN 'sparsest 20%'
-    WHEN 2 THEN 'sparse 20%'
-    WHEN 3 THEN 'moderate 20%'
-    WHEN 4 THEN 'leafy 20%'
-    WHEN 5 THEN 'greenest 20%'
-  END AS band
+SELECT h3, geometry_wkt, ndvi, mean_lst_c
 FROM hexes h
 WHERE h.city_id = COALESCE(
   (SELECT MIN(city_id) FROM cities WHERE name = '${city}'),
   (SELECT MIN(city_id) FROM cities))
--- Final ORDER BY = legend color order (sparsest→greenest onto brown→green). Keep it.
-ORDER BY ndvi
 ```
 
 ```sql lst_vs_ndvi
@@ -56,30 +35,30 @@ WHERE h.city_id = COALESCE(
 
 <Dropdown name="city" data={cities} column="name" label="City" bar />
 
-Dashdown's geo maps are country/region **choropleths** joined on GeoJSON ids, not
-arbitrary point maps — and a component's attributes can't be driven by a filter.
-So each city "map" here is a **ScatterChart of hex centroids** (x = longitude,
-y = latitude), coloured by a 5-band temperature/greenness quintile. The result is
-a faithful top-down picture of the city that re-queries per selection.
+Each city map is a true hex-polygon mosaic drawn from every hex's own footprint
+(`geometry_wkt`, EPSG:4326), coloured by a **continuous** gradient over the
+metric rather than 5 quintile bands — so equal colours mean equal values across
+cities, not just equal rank within one. **Scroll to zoom, drag to pan** (pinch
+on touch); hover a hex for its exact numbers. The map re-queries whenever you
+change the City filter.
 
 ## Where it's hot
 
-Each point is one H3 hex at its true position; colour is its land-surface
-temperature quintile, cool **blue** → hot **red**.
+Every hex sits at its true position and shape, filled by land-surface
+temperature on a cool **blue** → amber → hot **red** ramp. Hover for the hex's
+greenness (NDVI) and planting-priority score.
 
-<ScatterChart data={lst_map} x="lon" y="lat" series="band"
-  color="#4c78a8,#6cc5b0,#f2cf5b,#f58518,#e45756"
-  height=520 title="Land-surface temperature by hex (quintile bands)" />
+<HexMap data={lst_map} value="mean_lst_c" unit="°C" scheme="heat"
+  title="Land-surface temperature by hex" height=520 tooltip="ndvi,priority_score" />
 
 ## Where it's green
 
-The same hexes coloured by **NDVI** quintile. The ramp is deliberately reversed
-from the heat map so the semantics read naturally: **dark green = highest NDVI**
-(densest vegetation), tan/brown = barest ground.
+The same hexes filled by **NDVI**. The ramp runs tan/brown (barest ground) →
+**dark green** (densest vegetation), so the semantics read naturally and invert
+the heat map above. Hover for each hex's land-surface temperature.
 
-<ScatterChart data={ndvi_map} x="lon" y="lat" series="band"
-  color="#a6611a,#d8b365,#c2e699,#78c679,#238443"
-  height=520 title="Vegetation (NDVI) by hex (quintile bands)" />
+<HexMap data={ndvi_map} value="ndvi" scheme="greens"
+  title="Vegetation (NDVI) by hex" height=520 tooltip="mean_lst_c" />
 
 :::note
 NDVI blends all vegetation together. The v0.2 planting model splits it
@@ -94,9 +73,10 @@ expected sign is **negative** — greener hexes (higher NDVI) tend to run cooler
 which is exactly the lever the priority model pulls on.
 
 <ScatterChart data={lst_vs_ndvi} x="ndvi" y="mean_lst_c"
-  height=380 title="LST vs NDVI (one point per hex)" />
+  height=380 title="LST vs NDVI (one point per hex)"
+  explain="Describe the relationship between vegetation and surface temperature, and what the vertical spread at low NDVI means." />
 
 :::note
 Every hex is plotted — no sampling or `LIMIT` — so the map is the full grid
-(~1–2k points per city).
+(~1.7–2.6k hexes per city).
 :::

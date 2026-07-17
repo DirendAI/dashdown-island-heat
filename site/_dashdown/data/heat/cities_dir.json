@@ -1,1 +1,0 @@
-{"columns": ["city_id", "name", "country", "n_hexes", "model_r2"], "rows": [["ghent-belgium", "Ghent", "Belgium", 1753, 0.865], ["ljubljana-slovenia", "Ljubljana", "Slovenia", 2559, 0.953]], "query": "cities_dir"}

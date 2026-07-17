@@ -1,24 +1,26 @@
-# Publishes the committed static export (site/) to GitHub Pages.
+# Builds the dashboard's static export in CI and publishes it to GitHub Pages.
 #
-# The site is built locally — `dashdown build dashboard --out site` — because the
-# build pre-renders query snapshots from data/heat.duckdb, which is gitignored
-# (reproducible via `heat-island add-city`). CI therefore only uploads the
-# committed artifact; it never needs the pipeline or the database.
+# The build runs `dashdown build dashboard --out site` against the committed
+# data/heat.duckdb. With the MISTRAL_API_KEY repo secret set, the build also
+# bakes the AI commentary (<Ask> blocks and chart `explain` footers) into the
+# export; without it the site still builds — AI cards show a muted
+# "commentary not available" note instead (never a build failure).
 #
-# ONE-TIME SETUP: configure-pages tries to enable Pages automatically
-# (enablement: true), but many org policies block the workflow token from
-# creating the Pages site ("Resource not accessible by integration"). If the
-# first run fails that way, a repo admin must enable it once in
-# Settings → Pages → Build and deployment → Source: "GitHub Actions",
-# then re-run this workflow (or push any site/ change).
-
+# ONE-TIME SETUP (repo admin):
+# 1. Settings → Pages → Build and deployment → Source: "GitHub Actions".
+# 2. Settings → Environments → github-pages → Deployment branches: allow `main`
+#    (the auto-created rule may be pinned to the branch that was default when
+#    Pages was first enabled).
+# 3. Settings → Secrets and variables → Actions → New repository secret:
+#    MISTRAL_API_KEY (optional — enables the baked AI commentary).
 name: Deploy dashboard to GitHub Pages
 
 on:
   push:
     branches: [main]
     paths:
-      - "site/**"
+      - "dashboard/**"
+      - "data/heat.duckdb"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -33,17 +35,32 @@ concurrency:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/configure-pages@v5
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Dashdown (with Mistral extra for AI commentary)
+        run: pipx install 'dashdown-md[mistral]'
+
+      - name: Build static site (bakes query snapshots + AI commentary)
+        run: dashdown build dashboard --out site
+        env:
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
         with:
           enablement: true
-      - uses: actions/upload-pages-artifact@v3
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
         with:
           path: site
-      - id: deployment
+
+      - name: Deploy to GitHub Pages
+        id: deployment
         uses: actions/deploy-pages@v4

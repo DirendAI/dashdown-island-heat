@@ -1,7 +1,11 @@
-# data: DuckDB + caches are reproducible via `heat-island add-city`
-# (anchored to repo root — an unanchored `data/` would also swallow the
-# static site's pre-rendered query snapshots under site/_dashdown/data/)
-/data/
+# Reproducible data artifacts. data/heat.duckdb IS tracked (the dashboard and the
+# CI static-site build read it); only caches and throwaway plots are ignored.
+/data/cache/
+/data/*.png
+
+# The static site is built in CI (dashdown build dashboard --out site) so the
+# MISTRAL_API_KEY secret can bake AI commentary — never commit a local build.
+/site/
 
 # python
 __pycache__/

@@ -23,33 +23,13 @@ FROM hexes WHERE city_id = '${city_id}'
 ```
 
 ```sql lst_map
-SELECT
-  lon, lat,
-  CASE NTILE(5) OVER (ORDER BY mean_lst_c)
-    WHEN 1 THEN 'coolest 20%'
-    WHEN 2 THEN 'cool 20%'
-    WHEN 3 THEN 'moderate 20%'
-    WHEN 4 THEN 'warm 20%'
-    WHEN 5 THEN 'hottest 20%'
-  END AS band
+SELECT h3, geometry_wkt, mean_lst_c, ndvi, priority_score
 FROM hexes WHERE city_id = '${city_id}'
--- Final ORDER BY = legend color order (coolest→hottest onto blue→red). Keep it.
-ORDER BY mean_lst_c
 ```
 
 ```sql ndvi_map
-SELECT
-  lon, lat,
-  CASE NTILE(5) OVER (ORDER BY ndvi)
-    WHEN 1 THEN 'sparsest 20%'
-    WHEN 2 THEN 'sparse 20%'
-    WHEN 3 THEN 'moderate 20%'
-    WHEN 4 THEN 'leafy 20%'
-    WHEN 5 THEN 'greenest 20%'
-  END AS band
+SELECT h3, geometry_wkt, ndvi, mean_lst_c
 FROM hexes WHERE city_id = '${city_id}'
--- Final ORDER BY = legend color order (sparsest→greenest onto brown→green). Keep it.
-ORDER BY ndvi
 ```
 
 ```sql lst_vs_ndvi
@@ -70,33 +50,13 @@ FROM hexes WHERE city_id = '${city_id}'
 ```
 
 ```sql prio_map
-SELECT
-  lon, lat,
-  CASE NTILE(5) OVER (ORDER BY priority_score)
-    WHEN 1 THEN 'lowest 20%'
-    WHEN 2 THEN 'low 20%'
-    WHEN 3 THEN 'moderate 20%'
-    WHEN 4 THEN 'high 20%'
-    WHEN 5 THEN 'highest 20%'
-  END AS band
+SELECT h3, geometry_wkt, priority_score, predicted_cooling_c, plantable_fraction
 FROM hexes WHERE city_id = '${city_id}'
--- Final ORDER BY = legend color order (lowest→highest onto blue→red). Keep it.
-ORDER BY priority_score
 ```
 
 ```sql plantable_map
-SELECT
-  lon, lat,
-  CASE NTILE(5) OVER (ORDER BY plantable_fraction)
-    WHEN 1 THEN 'least plantable 20%'
-    WHEN 2 THEN 'low 20%'
-    WHEN 3 THEN 'moderate 20%'
-    WHEN 4 THEN 'high 20%'
-    WHEN 5 THEN 'most plantable 20%'
-  END AS band
+SELECT h3, geometry_wkt, plantable_fraction, tree_fraction
 FROM hexes WHERE city_id = '${city_id}'
--- Final ORDER BY = legend color order (least→most plantable onto grey→green). Keep it.
-ORDER BY plantable_fraction
 ```
 
 ```sql max_cooling
@@ -134,6 +94,9 @@ This page is a single template (`pages/cities/[city_id].md`) that the static
 export emits once per processed city — on the live server you also get the
 interactive pages with a city selector in the filter bar.
 
+<Ask data={kpis,meta} inline refresh=false cache_ttl=86400
+  ask="Narrate this city's urban-heat story in two short paragraphs: how severe its heat island is (the hottest hex versus the city mean), how green and plantable it is, and how much confidence the model's R² warrants. Plain language, no bullet lists." />
+
 <Grid cols=3>
 <Counter data={kpis} column="hottest_hex" format="number" decimals=1 suffix="°C" label="Hottest hex" />
 <Counter data={kpis} column="mean_lst" format="number" decimals=1 suffix="°C" label="City mean LST" />
@@ -145,26 +108,27 @@ interactive pages with a city selector in the filter bar.
 
 ## Where it's hot
 
-Each point is one H3 hex at its true position; colour is its land-surface
-temperature quintile, cool **blue** → hot **red** (Landsat summer composite).
+Each hex is drawn at its true footprint and filled by land-surface temperature
+on a **continuous** cool **blue** → amber → hot **red** ramp (Landsat summer
+composite) — not quintile bands. Scroll to zoom, drag to pan; hover for the
+hex's greenness and priority score.
 
-<ScatterChart data={lst_map} x="lon" y="lat" series="band"
-  color="#4c78a8,#6cc5b0,#f2cf5b,#f58518,#e45756"
-  height=520 title="Land-surface temperature by hex (quintile bands)" />
+<HexMap data={lst_map} value="mean_lst_c" unit="°C" scheme="heat"
+  title="Land-surface temperature by hex" height=520 tooltip="ndvi,priority_score" />
 
 ## Where it's green
 
-The same hexes coloured by **NDVI** quintile — dark green = densest vegetation,
-tan/brown = barest ground.
+The same hexes filled by **NDVI** — tan/brown (barest ground) → **dark green**
+(densest vegetation). Hover for each hex's land-surface temperature.
 
-<ScatterChart data={ndvi_map} x="lon" y="lat" series="band"
-  color="#a6611a,#d8b365,#c2e699,#78c679,#238443"
-  height=520 title="Vegetation (NDVI) by hex (quintile bands)" />
+<HexMap data={ndvi_map} value="ndvi" scheme="greens"
+  title="Vegetation (NDVI) by hex" height=520 tooltip="mean_lst_c" />
 
 Greener hexes run cooler — the lever the planting model pulls on:
 
 <ScatterChart data={lst_vs_ndvi} x="ndvi" y="mean_lst_c"
-  height=380 title="LST vs NDVI (one point per hex)" />
+  height=380 title="LST vs NDVI (one point per hex)"
+  explain="Describe the relationship between vegetation and surface temperature, and what the vertical spread at low NDVI means." />
 
 ## Model quality
 
@@ -178,10 +142,10 @@ are honest out-of-area numbers.
 </Grid>
 
 <BarChart data={feat_imp} x="feature" y="mean_abs_shap" horizontal height=380
-  title="Feature importance (mean |SHAP|, °C)" />
+  title="Feature importance (mean |SHAP|, °C)" explain />
 
 <ScatterChart data={pred_vs_actual} x="mean_lst_c" y="predicted_lst_c"
-  height=440 title="Predicted vs observed LST (°C)" />
+  height=440 title="Predicted vs observed LST (°C)" explain />
 
 ## Planting priorities
 
@@ -190,13 +154,11 @@ capped by each hex's **plantable space** (ESA WorldCover): built-up land earns a
 small street-pit credit, water and existing forest count zero. Cooling figures
 are **value ± uncertainty** — the spread across the 5 spatial-CV fold models.
 
-<ScatterChart data={prio_map} x="lon" y="lat" series="band"
-  color="#4c78a8,#6cc5b0,#f2cf5b,#f58518,#e45756"
-  height=520 title="Planting priority by hex (quintile bands)" />
+<HexMap data={prio_map} value="priority_score" scheme="priority"
+  title="Planting priority by hex" height=520 tooltip="predicted_cooling_c,plantable_fraction" />
 
-<ScatterChart data={plantable_map} x="lon" y="lat" series="band"
-  color="#bdbdbd,#c7e9c0,#a1d99b,#41ab5d,#006d2c"
-  height=520 title="Plantable land share by hex (quintile bands)" />
+<HexMap data={plantable_map} value="plantable_fraction" scheme="greens"
+  title="Plantable land share by hex" height=520 tooltip="tree_fraction" />
 
 ### Biggest single win
 
